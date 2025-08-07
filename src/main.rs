@@ -13,10 +13,12 @@ use ast1060_pac::{Wdt, Wdt1};
 use aspeed_ddk::ecdsa::AspeedEcdsa;
 use aspeed_ddk::hace_controller::HaceController;
 use aspeed_ddk::rsa::AspeedRsa;
+use aspeed_ddk::spi;
 use aspeed_ddk::syscon::{ClockId, ResetId, SysCon};
 use fugit::MillisDurationU32 as MilliSeconds;
 
 use aspeed_ddk::tests::functional::ecdsa_test::run_ecdsa_tests;
+use aspeed_ddk::tests::functional::gpio_test;
 use aspeed_ddk::tests::functional::hash_test::run_hash_tests;
 use aspeed_ddk::tests::functional::hmac_test::run_hmac_tests;
 use aspeed_ddk::tests::functional::rsa_test::run_rsa_tests;
@@ -161,10 +163,19 @@ fn main() -> ! {
 
     let mut rsa = AspeedRsa::new(&secure, delay);
     run_rsa_tests(&mut uart_controller, &mut rsa);
-
+    gpio_test::test_gpioa(&mut uart_controller);
     test_wdt(&mut uart_controller);
     run_timer_tests(&mut uart_controller);
 
+    let test_spicontroller = false;
+    if test_spicontroller {
+        spi::spitest::test_fmc(&mut uart_controller);
+        spi::spitest::test_spi(&mut uart_controller);
+
+        gpio_test::test_gpio_flash_power(&mut uart_controller);
+        spi::spitest::test_spi2(&mut uart_controller);
+    }
+    // Initialize the peripherals here if needed
     loop {
         cortex_m::asm::wfi();
     }
