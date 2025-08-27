@@ -25,7 +25,7 @@ class Colors:
 # Configuration
 QEMU_MACHINE = "ast1030-evb"
 TARGET = "thumbv7em-none-eabihf"
-QEMU_CMD = "/home/ferro/qemu/bin/qemu-system-arm"
+QEMU_CMD = os.environ.get('QEMU_CMD', 'qemu-system-arm')
 TIMEOUT_SECONDS = 60
 
 def print_step(message):
@@ -37,34 +37,49 @@ def print_warning(message):
 def print_error(message):
     print(f"{Colors.RED}[ERROR]{Colors.NC} {message}")
 
+
 def check_qemu_exists():
     """Check if QEMU binary exists and is executable"""
-    if not os.path.isfile(QEMU_CMD) or not os.access(QEMU_CMD, os.X_OK):
-        print_error(f"qemu-system-arm not found at {QEMU_CMD}")
+    # First try the full path if it looks like an absolute path
+    if os.path.isabs(QEMU_CMD):
+        if not os.path.isfile(QEMU_CMD) or not os.access(QEMU_CMD, os.X_OK):
+            print_error(f"qemu-system-arm not found at {QEMU_CMD}")
+            return False
+        return True
+    
+    # If it's just a command name, check if it's in PATH
+    try:
+        subprocess.run([QEMU_CMD, "--version"], 
+                      stdout=subprocess.DEVNULL, 
+                      stderr=subprocess.DEVNULL, 
+                      check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print_error(f"qemu-system-arm not found in PATH or at {QEMU_CMD}")
         print_warning("To build QEMU with ASPEED support:")
         print("  cd /home/ferro/qemu")
         print("  mkdir build && cd build")
         print("  ../configure --target-list=arm-softmmu")
         print("  make -j 4")
+        print_warning("Or set QEMU_CMD environment variable to the full path")
         return False
-    return True
 
 def build_project(build_mode):
     """Build the project using cargo xtask"""
     print_step(f"Building project in {build_mode} mode...")
-    
+    project_root = os.getcwd()  # Use current working directory    
     try:
         if build_mode == "release":
             subprocess.run(["cargo", "xtask", "build", "--release"], 
-                         check=True, cwd="/home/ferro/git/aspeed-rust")
+                         check=True, cwd=project_root)
             binary_path = f"target/{TARGET}/release/aspeed-ddk"
         else:
             subprocess.run(["cargo", "xtask", "build"], 
-                         check=True, cwd="/home/ferro/git/aspeed-rust")
+                         check=True, cwd=project_root)
             binary_path = f"target/{TARGET}/debug/aspeed-ddk"
-        
-        full_binary_path = f"/home/ferro/git/aspeed-rust/{binary_path}"
-        
+
+        full_binary_path = os.path.join(project_root, binary_path)
+
         if not os.path.isfile(full_binary_path):
             print_error(f"Binary not found at {full_binary_path}")
             return None
@@ -200,7 +215,8 @@ def main():
     if not check_qemu_exists():
         return 1
     
-    print_step(f"Using QEMU: {QEMU_CMD}")
+    qemu_source = "environment variable QEMU_CMD" if 'QEMU_CMD' in os.environ else "PATH"
+    print_step(f"Using QEMU: {QEMU_CMD} (from {qemu_source})")                       
     
     # Build project
     build_mode = "release" if args.release else "debug"
