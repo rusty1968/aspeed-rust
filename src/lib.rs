@@ -7,6 +7,7 @@ pub mod ecdsa;
 pub mod gpio;
 pub mod hace_controller;
 pub mod hash;
+pub mod hash_owned;
 pub mod hmac;
 pub mod i2c;
 pub mod pinctrl;

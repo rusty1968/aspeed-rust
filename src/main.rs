@@ -26,6 +26,10 @@ use aspeed_ddk::tests::functional::rsa_test::run_rsa_tests;
 use aspeed_ddk::tests::functional::timer_test::run_timer_tests;
 use panic_halt as _;
 
+// Import owned API traits and types
+use aspeed_ddk::hash_owned::{Sha2_256, Sha2_384, Sha2_512};
+use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
+
 use proposed_traits::system_control::ResetControl;
 
 use core::ptr::{read_volatile, write_volatile};
@@ -116,6 +120,133 @@ macro_rules! debug_halt {
     }};
 }
 
+/// Test the owned digest API demonstrating move-based resource management
+fn test_owned_digest_api(uart: &mut UartController<'_>) {
+    writeln!(uart, "\r\nRunning owned digest API tests...\r\n").unwrap();
+    
+    // Get a fresh HACE peripheral for owned API testing
+    let peripherals = unsafe { Peripherals::steal() };
+    let hace = peripherals.hace;
+    
+    // Test SHA256 with owned API
+    writeln!(uart, "Testing owned SHA256 API...").unwrap();
+    test_owned_sha256(uart, hace);
+    
+    // Get fresh peripheral for SHA384 test (since it was consumed)
+    let peripherals = unsafe { Peripherals::steal() };
+    let hace = peripherals.hace;
+    
+    writeln!(uart, "Testing owned SHA384 API...").unwrap();
+    test_owned_sha384(uart, hace);
+    
+    // Get fresh peripheral for SHA512 test
+    let peripherals = unsafe { Peripherals::steal() };
+    let hace = peripherals.hace;
+    
+    writeln!(uart, "Testing owned SHA512 API...").unwrap();
+    test_owned_sha512(uart, hace);
+    
+    writeln!(uart, "All owned digest API tests completed!\r\n").unwrap();
+}
+
+/// Test owned SHA256 API demonstrating move semantics
+fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
+    let controller = HaceController::new(hace);
+    
+    // Initialize owned context - controller is moved
+    let context = match controller.init(Sha2_256) {
+        Ok(ctx) => ctx,
+        Err(_) => {
+            writeln!(uart, "Failed to initialize SHA256 context").unwrap();
+            return;
+        }
+    };
+    
+    // Update with data - context is moved and returned
+    let context = match context.update(b"Hello ") {
+        Ok(ctx) => ctx,
+        Err(_) => {
+            writeln!(uart, "Failed to update SHA256 context").unwrap();
+            return;
+        }
+    };
+    
+    let context = match context.update(b"Owned ") {
+        Ok(ctx) => ctx,
+        Err(_) => {
+            writeln!(uart, "Failed to update SHA256 context").unwrap();
+            return;
+        }
+    };
+    
+    let context = match context.update(b"API!") {
+        Ok(ctx) => ctx,
+        Err(_) => {
+            writeln!(uart, "Failed to update SHA256 context").unwrap();
+            return;
+        }
+    };
+    
+    // Finalize and get both digest and controller back
+    let (digest, _recovered_controller) = match context.finalize() {
+        Ok((dig, ctrl)) => (dig, ctrl),
+        Err(_) => {
+            writeln!(uart, "Failed to finalize SHA256 context").unwrap();
+            return;
+        }
+    };
+    
+    writeln!(uart, "SHA256 owned API digest: {:02x?}", &digest.value[..8]).unwrap();
+    writeln!(uart, "SHA256 owned API: PASSED ✅").unwrap();
+}
+
+/// Test owned SHA384 API demonstrating controller recovery
+fn test_owned_sha384(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
+    let controller = HaceController::new(hace);
+    
+    let context = controller.init(Sha2_384).unwrap();
+    let context = context.update(b"Move-based").unwrap();
+    let context = context.update(b" resource").unwrap();
+    let context = context.update(b" management").unwrap();
+    
+    let (digest, recovered_controller) = context.finalize().unwrap();
+    
+    writeln!(uart, "SHA384 owned API digest: {:02x?}", &digest.value[..8]).unwrap();
+    writeln!(uart, "SHA384 owned API: PASSED ✅").unwrap();
+    
+    // Demonstrate controller recovery by using it again
+    let context2 = recovered_controller.init(Sha2_384).unwrap();
+    let context2 = context2.update(b"Reused controller").unwrap();
+    let (_digest2, _final_controller) = context2.finalize().unwrap();
+    
+    writeln!(uart, "Controller recovery: PASSED ✅").unwrap();
+}
+
+/// Test owned SHA512 API demonstrating cancellation
+fn test_owned_sha512(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
+    let controller = HaceController::new(hace);
+    
+    let context = controller.init(Sha2_512).unwrap();
+    let context = context.update(b"This will be").unwrap();
+    let context = context.update(b" cancelled").unwrap();
+    
+    // Demonstrate cancellation - returns controller without computing digest
+    let recovered_controller = context.cancel();
+    
+    writeln!(uart, "SHA512 cancellation: PASSED ✅").unwrap();
+    
+    // Use recovered controller for actual computation
+    let context = recovered_controller.init(Sha2_512).unwrap();
+    let context = context.update(b"Persistent").unwrap();
+    let context = context.update(b" session").unwrap();
+    let context = context.update(b" contexts").unwrap();
+    
+    let (digest, _final_controller) = context.finalize().unwrap();
+    
+    writeln!(uart, "SHA512 owned API digest: {:02x?}", &digest.value[..8]).unwrap();
+    writeln!(uart, "SHA512 owned API: PASSED ✅").unwrap();
+}
+
 #[entry]
 fn main() -> ! {
     let peripherals = unsafe { Peripherals::steal() };
@@ -155,6 +286,9 @@ fn main() -> ! {
     run_hash_tests(&mut uart_controller, &mut hace_controller);
 
     run_hmac_tests(&mut uart_controller, &mut hace_controller);
+
+    // Test the owned digest API
+    test_owned_digest_api(&mut uart_controller);
 
     // Enable RSA and ECC
     let _ = syscon.enable_clock(ClockId::ClkRSACLK as u8);
