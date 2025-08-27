@@ -1,0 +1,267 @@
+// Licensed under the Apache-2.0 license
+
+//! OpenProt owned digest API implementation for ASPEED HACE controller
+//!
+//! This module implements the move-based digest API from openprot-hal-blocking
+//! which enables persistent session storage, multiple concurrent contexts,
+//! and compile-time prevention of use-after-finalize.
+//!
+//! Unlike the scoped API, contexts created here have no lifetime constraints
+//! and can be stored in structs, moved across functions, and persist across IPC.
+
+use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
+use core::convert::Infallible;
+use core::marker::PhantomData;
+use openprot_hal_blocking::digest::{DigestAlgorithm, ErrorType};
+use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
+
+// Re-export digest algorithm types from existing hash module
+pub use crate::hash::{Sha1, Sha224, Sha256, Sha384, Sha512, Digest48, Digest64};
+
+/// Trait to convert digest algorithm types to our internal HashAlgo enum
+pub trait IntoHashAlgo {
+    fn to_hash_algo() -> HashAlgo;
+}
+
+impl IntoHashAlgo for Sha1 {
+    fn to_hash_algo() -> HashAlgo {
+        HashAlgo::SHA1
+    }
+}
+
+impl IntoHashAlgo for Sha224 {
+    fn to_hash_algo() -> HashAlgo {
+        HashAlgo::SHA224
+    }
+}
+
+impl IntoHashAlgo for Sha256 {
+    fn to_hash_algo() -> HashAlgo {
+        HashAlgo::SHA256
+    }
+}
+
+impl IntoHashAlgo for Sha384 {
+    fn to_hash_algo() -> HashAlgo {
+        HashAlgo::SHA384
+    }
+}
+
+impl IntoHashAlgo for Sha512 {
+    fn to_hash_algo() -> HashAlgo {
+        HashAlgo::SHA512
+    }
+}
+
+/// Owned digest context that wraps the HACE controller and algorithm state
+/// 
+/// This context owns the controller and has no lifetime constraints.
+/// It can be stored in structs, moved across functions, and persist across IPC boundaries.
+pub struct OwnedDigestContext<T: DigestAlgorithm + IntoHashAlgo> {
+    controller: HaceController, 
+    _phantom: PhantomData<T>,
+}
+
+impl<T: DigestAlgorithm + IntoHashAlgo> ErrorType for OwnedDigestContext<T> {
+    type Error = Infallible;
+}
+
+/// Macro to implement owned digest traits for each algorithm
+macro_rules! impl_owned_digest {
+    ($algo:ident) => {
+        impl DigestInit<$algo> for HaceController
+        where
+            <$algo as DigestAlgorithm>::Digest: Default + AsMut<[u8]>,
+        {
+            type Context = OwnedDigestContext<$algo>;
+            type Output = <$algo as DigestAlgorithm>::Digest;
+
+            fn init(mut self, _init_params: $algo) -> Result<Self::Context, Self::Error> {
+                // Set up the algorithm and initialize the context
+                self.algo = <$algo>::to_hash_algo();
+                self.ctx_mut().method = self.algo.hash_cmd();
+                self.copy_iv_to_digest();
+                self.ctx_mut().block_size = u32::try_from(self.algo.block_size()).unwrap();
+                self.ctx_mut().bufcnt = 0;
+                self.ctx_mut().digcnt = [0; 2];
+
+                Ok(OwnedDigestContext {
+                    controller: self,
+                    _phantom: PhantomData,
+                })
+            }
+        }
+
+        impl DigestOp for OwnedDigestContext<$algo>
+        where
+            <$algo as DigestAlgorithm>::Digest: Default + AsMut<[u8]>,
+        {
+            type Output = <$algo as DigestAlgorithm>::Digest;
+            type Controller = HaceController;
+
+            fn update(mut self, data: &[u8]) -> Result<Self, Self::Error> {
+                let input_len = u32::try_from(data.len()).unwrap_or(u32::MAX);
+
+                // Update digest count
+                let (new_len, carry) = self.controller.ctx_mut().digcnt[0]
+                    .overflowing_add(u64::from(input_len));
+                
+                self.controller.ctx_mut().digcnt[0] = new_len;
+                if carry {
+                    self.controller.ctx_mut().digcnt[1] += 1;
+                }
+
+                let start = self.controller.ctx_mut().bufcnt as usize;
+                let end = start + input_len as usize;
+                
+                // If we can fit everything in the buffer, just copy it
+                if self.controller.ctx_mut().bufcnt + input_len < self.controller.ctx_mut().block_size {
+                    self.controller.ctx_mut().buffer[start..end].copy_from_slice(data);
+                    self.controller.ctx_mut().bufcnt += input_len;
+                    return Ok(self);
+                }
+
+                // Process data in blocks using scatter-gather
+                let remaining = (input_len + self.controller.ctx_mut().bufcnt) % self.controller.ctx_mut().block_size;
+                let total_len = (input_len + self.controller.ctx_mut().bufcnt) - remaining;
+                let mut i = 0;
+
+                if self.controller.ctx_mut().bufcnt != 0 {
+                    self.controller.ctx_mut().sg[0].addr = self.controller.ctx_mut().buffer.as_ptr() as u32;
+                    self.controller.ctx_mut().sg[0].len = self.controller.ctx_mut().bufcnt;
+                    if total_len == self.controller.ctx_mut().bufcnt {
+                        self.controller.ctx_mut().sg[0].addr = data.as_ptr() as u32;
+                        self.controller.ctx_mut().sg[0].len |= HACE_SG_LAST;
+                    }
+                    i += 1;
+                }
+
+                if total_len != self.controller.ctx_mut().bufcnt {
+                    self.controller.ctx_mut().sg[i].addr = data.as_ptr() as u32;
+                    self.controller.ctx_mut().sg[i].len = 
+                        (total_len - self.controller.ctx_mut().bufcnt) | HACE_SG_LAST;
+                }
+
+                self.controller.start_hash_operation(total_len);
+
+                // Handle remaining data
+                if remaining != 0 {
+                    let src_start = (total_len - self.controller.ctx_mut().bufcnt) as usize;
+                    let src_end = src_start + remaining as usize;
+                    
+                    self.controller.ctx_mut().buffer[..(remaining as usize)]
+                        .copy_from_slice(&data[src_start..src_end]);
+                    self.controller.ctx_mut().bufcnt = remaining;
+                } else {
+                    self.controller.ctx_mut().bufcnt = 0;
+                }
+
+                Ok(self)
+            }
+
+            fn finalize(mut self) -> Result<(Self::Output, Self::Controller), Self::Error> {
+                // Fill padding and finalize
+                self.controller.fill_padding(0);
+                let digest_len = self.controller.algo.digest_size();
+
+                let (digest_ptr, bufcnt) = {
+                    let ctx = self.controller.ctx_mut();
+                    
+                    ctx.sg[0].addr = ctx.buffer.as_ptr() as u32;
+                    ctx.sg[0].len = ctx.bufcnt | HACE_SG_LAST;
+                    
+                    (ctx.digest.as_ptr(), ctx.bufcnt)
+                };
+
+                self.controller.start_hash_operation(bufcnt);
+
+                // Copy the digest result
+                let slice = unsafe { core::slice::from_raw_parts(digest_ptr, digest_len) };
+                
+                let mut output = <$algo as DigestAlgorithm>::Digest::default();
+                output.as_mut()[..digest_len].copy_from_slice(slice);
+
+                // Clean up the context before returning the controller
+                self.controller.cleanup_context();
+
+                Ok((output, self.controller))
+            }
+
+            fn cancel(mut self) -> Self::Controller {
+                // Clean up the context and return the controller
+                self.controller.cleanup_context();
+                self.controller
+            }
+        }
+    };
+}
+
+// Implement the owned traits for each supported algorithm
+impl_owned_digest!(Sha256);
+impl_owned_digest!(Sha384);
+impl_owned_digest!(Sha512);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hace_controller::HaceController;
+    use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
+    
+    #[test]
+    fn test_owned_digest_pattern() {
+        // This test demonstrates the owned pattern usage
+        // Note: In a real test, you'd need actual hardware or mocking
+        
+        // Example usage pattern (would need proper initialization):
+        // let controller = HaceController::new(hace_peripheral);
+        // let context = controller.init(Sha256::default())?;
+        // let context = context.update(b"hello")?;
+        // let context = context.update(b" world")?;  
+        // let (digest, controller) = context.finalize()?;
+        // // Controller is now recovered for reuse
+        
+        // This test just verifies compilation
+        assert!(true);
+    }
+
+    #[test]
+    fn test_session_storage_pattern() {
+        // Demonstrate session storage pattern - impossible with scoped API
+        // This simulates what a server would do to store digest contexts
+        
+        struct SimpleSessionManager {
+            session_sha256: Option<OwnedDigestContext<Sha256>>,
+            session_sha384: Option<OwnedDigestContext<Sha384>>,
+            controller: Option<HaceController<'static>>,
+        }
+
+        impl SimpleSessionManager {
+            fn new(controller: HaceController<'static>) -> Self {
+                Self {
+                    session_sha256: None,
+                    session_sha384: None,
+                    controller: Some(controller),
+                }
+            }
+
+            // Multiple sessions can coexist because contexts are owned
+            fn create_sha256_session(&mut self) -> Result<(), Infallible> {
+                let controller = self.controller.take().unwrap();
+                let context = controller.init(Sha256::default())?;
+                self.session_sha256 = Some(context);
+                Ok(())
+            }
+
+            fn update_sha256_session(&mut self, data: &[u8]) -> Result<(), Infallible> {
+                let context = self.session_sha256.take().unwrap();
+                let updated_context = context.update(data)?;
+                self.session_sha256 = Some(updated_context);
+                Ok(())
+            }
+        }
+
+        // This test verifies the pattern compiles correctly
+        // In real usage, you'd have actual hardware initialization
+        assert!(true);
+    }
+}

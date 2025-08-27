@@ -70,9 +70,11 @@ dependencies = [
  "embedded-io",
  "fugit",
  "hex-literal",
+ "openprot-hal-blocking",
  "panic-halt",
  "paste",
  "proposed-traits",
+ "zerocopy",
 ]
 
 [[package]]
@@ -313,6 +315,15 @@ name = "once_cell_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
+
+[[package]]
+name = "openprot-hal-blocking"
+version = "0.1.0"
+source = "git+https://github.com/OpenPRoT/openprot#fe5ef09d013ff827cd7a89de0df34ead170db6b5"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "zerocopy",
+]
 
 [[package]]
 name = "panic-halt"
@@ -642,4 +653,24 @@ dependencies = [
  "once_cell",
  "toml",
  "walkdir",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.8.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1039dd0d3c310cf05de012d8a39ff557cb0d23087fd44cad61df08fc31907a2f"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ecf5b4cc5364572d7f4c329661bcc82724222973f2cab6f050a4e5c22f75181"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
 ]
