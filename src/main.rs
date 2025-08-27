@@ -150,7 +150,7 @@ fn main() -> ! {
     let reset_id = ResetId::RstHACE;
     let _ = syscon.reset_deassert(&reset_id);
 
-    let mut hace_controller = HaceController::new(&hace);
+    let mut hace_controller = HaceController::new(hace);
 
     run_hash_tests(&mut uart_controller, &mut hace_controller);
 

@@ -1,7 +1,9 @@
 // Licensed under the Apache-2.0 license
 
 use ast1060_pac::Hace;
-use core::convert::Infallible;
+use core::convert::{Infallible, AsRef};
+use core::default::Default;
+use core::marker::Sync;
 use proposed_traits::digest::ErrorType as DigestErrorType;
 use proposed_traits::mac::ErrorType as MacErrorType;
 
@@ -132,7 +134,7 @@ pub trait ContextCleanup {
     fn cleanup_context(&mut self);
 }
 
-impl ContextCleanup for crate::hace_controller::HaceController<'_> {
+impl ContextCleanup for crate::hace_controller::HaceController {
     fn cleanup_context(&mut self) {
         let ctx = self.ctx_mut();
         ctx.bufcnt = 0;
@@ -315,15 +317,15 @@ impl HashAlgo {
     }
 }
 
-pub struct HaceController<'ctrl> {
-    pub hace: &'ctrl Hace,
+pub struct HaceController {
+    pub hace: Hace,
     pub algo: HashAlgo,
     pub aspeed_hash_ctx: AspeedHashContext, // Own the context instead of using a pointer
 }
 
-impl<'ctrl> HaceController<'ctrl> {
+impl HaceController {
     #[must_use]
-    pub fn new(hace: &'ctrl Hace) -> Self {
+    pub fn new(hace: Hace) -> Self {
         Self {
             hace,
             algo: HashAlgo::SHA256,
@@ -338,15 +340,15 @@ impl<'ctrl> HaceController<'ctrl> {
     }
 }
 
-impl DigestErrorType for HaceController<'_> {
+impl DigestErrorType for HaceController {
     type Error = Infallible;
 }
 
-impl MacErrorType for HaceController<'_> {
+impl MacErrorType for HaceController {
     type Error = Infallible;
 }
 
-impl HaceController<'_> {
+impl HaceController {
     pub fn ctx_mut(&mut self) -> &mut AspeedHashContext {
         unsafe { &mut *Self::shared_ctx() }
     }
