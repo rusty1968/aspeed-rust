@@ -18,36 +18,27 @@ use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 // Re-export digest algorithm types from existing hash module
 pub use crate::hash::{Sha1, Sha224, Sha256, Sha384, Sha512, Digest48, Digest64};
 
+// Also re-export OpenProt digest types for convenience
+pub use openprot_hal_blocking::digest::{Sha2_256, Sha2_384, Sha2_512, Digest};
+
 /// Trait to convert digest algorithm types to our internal HashAlgo enum
 pub trait IntoHashAlgo {
     fn to_hash_algo() -> HashAlgo;
 }
 
-impl IntoHashAlgo for Sha1 {
-    fn to_hash_algo() -> HashAlgo {
-        HashAlgo::SHA1
-    }
-}
-
-impl IntoHashAlgo for Sha224 {
-    fn to_hash_algo() -> HashAlgo {
-        HashAlgo::SHA224
-    }
-}
-
-impl IntoHashAlgo for Sha256 {
+impl IntoHashAlgo for Sha2_256 {
     fn to_hash_algo() -> HashAlgo {
         HashAlgo::SHA256
     }
 }
 
-impl IntoHashAlgo for Sha384 {
+impl IntoHashAlgo for Sha2_384 {
     fn to_hash_algo() -> HashAlgo {
         HashAlgo::SHA384
     }
 }
 
-impl IntoHashAlgo for Sha512 {
+impl IntoHashAlgo for Sha2_512 {
     fn to_hash_algo() -> HashAlgo {
         HashAlgo::SHA512
     }
@@ -62,6 +53,11 @@ pub struct OwnedDigestContext<T: DigestAlgorithm + IntoHashAlgo> {
     _phantom: PhantomData<T>,
 }
 
+// Implement ErrorType for HaceController (required by OpenProt DigestInit)
+impl ErrorType for HaceController {
+    type Error = Infallible;
+}
+
 impl<T: DigestAlgorithm + IntoHashAlgo> ErrorType for OwnedDigestContext<T> {
     type Error = Infallible;
 }
@@ -69,10 +65,7 @@ impl<T: DigestAlgorithm + IntoHashAlgo> ErrorType for OwnedDigestContext<T> {
 /// Macro to implement owned digest traits for each algorithm
 macro_rules! impl_owned_digest {
     ($algo:ident) => {
-        impl DigestInit<$algo> for HaceController
-        where
-            <$algo as DigestAlgorithm>::Digest: Default + AsMut<[u8]>,
-        {
+        impl DigestInit<$algo> for HaceController {
             type Context = OwnedDigestContext<$algo>;
             type Output = <$algo as DigestAlgorithm>::Digest;
 
@@ -92,10 +85,7 @@ macro_rules! impl_owned_digest {
             }
         }
 
-        impl DigestOp for OwnedDigestContext<$algo>
-        where
-            <$algo as DigestAlgorithm>::Digest: Default + AsMut<[u8]>,
-        {
+        impl DigestOp for OwnedDigestContext<$algo> {
             type Output = <$algo as DigestAlgorithm>::Digest;
             type Controller = HaceController;
 
@@ -178,8 +168,21 @@ macro_rules! impl_owned_digest {
                 // Copy the digest result
                 let slice = unsafe { core::slice::from_raw_parts(digest_ptr, digest_len) };
                 
-                let mut output = <$algo as DigestAlgorithm>::Digest::default();
-                output.as_mut()[..digest_len].copy_from_slice(slice);
+                // Create OpenProt Digest from the raw bytes using constructor
+                use openprot_hal_blocking::digest::Digest;
+                const OUTPUT_WORDS: usize = <$algo as DigestAlgorithm>::OUTPUT_BITS / 32;
+                let mut value = [0u32; OUTPUT_WORDS];
+                
+                // Copy bytes to u32 array in big-endian format
+                for (i, chunk) in slice.chunks(4).enumerate() {
+                    if i < OUTPUT_WORDS {
+                        let mut bytes = [0u8; 4];
+                        bytes[..chunk.len()].copy_from_slice(chunk);
+                        value[i] = u32::from_be_bytes(bytes);
+                    }
+                }
+                
+                let output = Digest::new(value);
 
                 // Clean up the context before returning the controller
                 self.controller.cleanup_context();
@@ -197,9 +200,9 @@ macro_rules! impl_owned_digest {
 }
 
 // Implement the owned traits for each supported algorithm
-impl_owned_digest!(Sha256);
-impl_owned_digest!(Sha384);
-impl_owned_digest!(Sha512);
+impl_owned_digest!(Sha2_256);
+impl_owned_digest!(Sha2_384);
+impl_owned_digest!(Sha2_512);
 
 #[cfg(test)]
 mod tests {
