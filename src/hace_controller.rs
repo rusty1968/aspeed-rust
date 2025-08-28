@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use ast1060_pac::Hace;
-use core::convert::{Infallible, AsRef};
+use core::convert::{AsRef, Infallible};
 use core::default::Default;
 use core::marker::Sync;
 use proposed_traits::digest::ErrorType as DigestErrorType;

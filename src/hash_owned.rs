@@ -17,16 +17,14 @@
 use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
 use core::convert::Infallible;
 use core::marker::PhantomData;
-use openprot_hal_blocking::digest::{DigestAlgorithm, ErrorType};
 use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
-
-
+use openprot_hal_blocking::digest::{DigestAlgorithm, ErrorType};
 
 // Re-export digest algorithm types from existing hash module
-pub use crate::hash::{Sha1, Sha224, Sha256, Sha384, Sha512, Digest48, Digest64};
+pub use crate::hash::{Digest48, Digest64, Sha1, Sha224, Sha256, Sha384, Sha512};
 
 // Also re-export OpenProt digest types for convenience
-pub use openprot_hal_blocking::digest::{Sha2_256, Sha2_384, Sha2_512, Digest};
+pub use openprot_hal_blocking::digest::{Digest, Sha2_256, Sha2_384, Sha2_512};
 
 /// Trait to convert digest algorithm types to our internal HashAlgo enum
 pub trait IntoHashAlgo {
@@ -52,13 +50,13 @@ impl IntoHashAlgo for Sha2_512 {
 }
 
 /// Owned digest context that wraps the HACE controller for exclusive access
-/// 
+///
 /// This context owns the controller wrapper (not the underlying shared hardware context)
 /// and provides exclusive access to the HACE hardware during digest operations.
 /// It has no lifetime constraints and can be stored in structs, moved across functions,
 /// and persist across IPC boundaries.
 pub struct OwnedDigestContext<T: DigestAlgorithm + IntoHashAlgo> {
-    controller: HaceController, 
+    controller: HaceController,
     _phantom: PhantomData<T>,
 }
 
@@ -99,102 +97,106 @@ macro_rules! impl_owned_digest {
             type Controller = HaceController;
 
             fn update(mut self, data: &[u8]) -> Result<Self, Self::Error> {
-                    let input_len = u32::try_from(data.len()).unwrap_or(u32::MAX);
+                let input_len = u32::try_from(data.len()).unwrap_or(u32::MAX);
 
-                    // Update digest count
-                    let (new_len, carry) = self.controller.ctx_mut().digcnt[0]
-                        .overflowing_add(u64::from(input_len));
-                    
-                    self.controller.ctx_mut().digcnt[0] = new_len;
-                    if carry {
-                        self.controller.ctx_mut().digcnt[1] += 1;
+                // Update digest count
+                let (new_len, carry) =
+                    self.controller.ctx_mut().digcnt[0].overflowing_add(u64::from(input_len));
+
+                self.controller.ctx_mut().digcnt[0] = new_len;
+                if carry {
+                    self.controller.ctx_mut().digcnt[1] += 1;
+                }
+
+                let start = self.controller.ctx_mut().bufcnt as usize;
+                let end = start + input_len as usize;
+
+                // If we can fit everything in the buffer, just copy it
+                if self.controller.ctx_mut().bufcnt + input_len
+                    < self.controller.ctx_mut().block_size
+                {
+                    self.controller.ctx_mut().buffer[start..end].copy_from_slice(data);
+                    self.controller.ctx_mut().bufcnt += input_len;
+                    return Ok(self);
+                }
+
+                // Process data in blocks using scatter-gather
+                let remaining = (input_len + self.controller.ctx_mut().bufcnt)
+                    % self.controller.ctx_mut().block_size;
+                let total_len = (input_len + self.controller.ctx_mut().bufcnt) - remaining;
+                let mut i = 0;
+
+                if self.controller.ctx_mut().bufcnt != 0 {
+                    self.controller.ctx_mut().sg[0].addr =
+                        self.controller.ctx_mut().buffer.as_ptr() as u32;
+                    self.controller.ctx_mut().sg[0].len = self.controller.ctx_mut().bufcnt;
+                    if total_len == self.controller.ctx_mut().bufcnt {
+                        self.controller.ctx_mut().sg[0].addr = data.as_ptr() as u32;
+                        self.controller.ctx_mut().sg[0].len |= HACE_SG_LAST;
                     }
+                    i += 1;
+                }
 
-                    let start = self.controller.ctx_mut().bufcnt as usize;
-                    let end = start + input_len as usize;
-                    
-                    // If we can fit everything in the buffer, just copy it
-                    if self.controller.ctx_mut().bufcnt + input_len < self.controller.ctx_mut().block_size {
-                        self.controller.ctx_mut().buffer[start..end].copy_from_slice(data);
-                        self.controller.ctx_mut().bufcnt += input_len;
-                        return Ok(self);
-                    }
+                if total_len != self.controller.ctx_mut().bufcnt {
+                    self.controller.ctx_mut().sg[i].addr = data.as_ptr() as u32;
+                    self.controller.ctx_mut().sg[i].len =
+                        (total_len - self.controller.ctx_mut().bufcnt) | HACE_SG_LAST;
+                }
 
-                    // Process data in blocks using scatter-gather
-                    let remaining = (input_len + self.controller.ctx_mut().bufcnt) % self.controller.ctx_mut().block_size;
-                    let total_len = (input_len + self.controller.ctx_mut().bufcnt) - remaining;
-                    let mut i = 0;
+                self.controller.start_hash_operation(total_len);
 
-                    if self.controller.ctx_mut().bufcnt != 0 {
-                        self.controller.ctx_mut().sg[0].addr = self.controller.ctx_mut().buffer.as_ptr() as u32;
-                        self.controller.ctx_mut().sg[0].len = self.controller.ctx_mut().bufcnt;
-                        if total_len == self.controller.ctx_mut().bufcnt {
-                            self.controller.ctx_mut().sg[0].addr = data.as_ptr() as u32;
-                            self.controller.ctx_mut().sg[0].len |= HACE_SG_LAST;
-                        }
-                        i += 1;
-                    }
+                // Handle remaining data
+                if remaining != 0 {
+                    let src_start = (total_len - self.controller.ctx_mut().bufcnt) as usize;
+                    let src_end = src_start + remaining as usize;
 
-                    if total_len != self.controller.ctx_mut().bufcnt {
-                        self.controller.ctx_mut().sg[i].addr = data.as_ptr() as u32;
-                        self.controller.ctx_mut().sg[i].len = 
-                            (total_len - self.controller.ctx_mut().bufcnt) | HACE_SG_LAST;
-                    }
-
-                    self.controller.start_hash_operation(total_len);
-
-                    // Handle remaining data
-                    if remaining != 0 {
-                        let src_start = (total_len - self.controller.ctx_mut().bufcnt) as usize;
-                        let src_end = src_start + remaining as usize;
-                        
-                        self.controller.ctx_mut().buffer[..(remaining as usize)]
-                            .copy_from_slice(&data[src_start..src_end]);
-                        self.controller.ctx_mut().bufcnt = remaining;
-                    } else {
-                        self.controller.ctx_mut().bufcnt = 0;
-                    }
+                    self.controller.ctx_mut().buffer[..(remaining as usize)]
+                        .copy_from_slice(&data[src_start..src_end]);
+                    self.controller.ctx_mut().bufcnt = remaining;
+                } else {
+                    self.controller.ctx_mut().bufcnt = 0;
+                }
 
                 Ok(self)
             }
 
             fn finalize(mut self) -> Result<(Self::Output, Self::Controller), Self::Error> {
-                    // Fill padding and finalize
-                    self.controller.fill_padding(0);
-                    let digest_len = self.controller.algo.digest_size();
+                // Fill padding and finalize
+                self.controller.fill_padding(0);
+                let digest_len = self.controller.algo.digest_size();
 
-                    let (digest_ptr, bufcnt) = {
-                        let ctx = self.controller.ctx_mut();
-                        
-                        ctx.sg[0].addr = ctx.buffer.as_ptr() as u32;
-                        ctx.sg[0].len = ctx.bufcnt | HACE_SG_LAST;
-                        
-                        (ctx.digest.as_ptr(), ctx.bufcnt)
-                    };
+                let (digest_ptr, bufcnt) = {
+                    let ctx = self.controller.ctx_mut();
 
-                    self.controller.start_hash_operation(bufcnt);
+                    ctx.sg[0].addr = ctx.buffer.as_ptr() as u32;
+                    ctx.sg[0].len = ctx.bufcnt | HACE_SG_LAST;
 
-                    // Copy the digest result
-                    let slice = unsafe { core::slice::from_raw_parts(digest_ptr, digest_len) };
-                    
-                    // Create OpenProt Digest from the raw bytes using constructor
-                    use openprot_hal_blocking::digest::Digest;
-                    const OUTPUT_WORDS: usize = <$algo as DigestAlgorithm>::OUTPUT_BITS / 32;
-                    let mut value = [0u32; OUTPUT_WORDS];
-                    
-                    // Copy bytes to u32 array in big-endian format
-                    for (i, chunk) in slice.chunks(4).enumerate() {
-                        if i < OUTPUT_WORDS {
-                            let mut bytes = [0u8; 4];
-                            bytes[..chunk.len()].copy_from_slice(chunk);
-                            value[i] = u32::from_be_bytes(bytes);
-                        }
+                    (ctx.digest.as_ptr(), ctx.bufcnt)
+                };
+
+                self.controller.start_hash_operation(bufcnt);
+
+                // Copy the digest result
+                let slice = unsafe { core::slice::from_raw_parts(digest_ptr, digest_len) };
+
+                // Create OpenProt Digest from the raw bytes using constructor
+                use openprot_hal_blocking::digest::Digest;
+                const OUTPUT_WORDS: usize = <$algo as DigestAlgorithm>::OUTPUT_BITS / 32;
+                let mut value = [0u32; OUTPUT_WORDS];
+
+                // Copy bytes to u32 array in big-endian format
+                for (i, chunk) in slice.chunks(4).enumerate() {
+                    if i < OUTPUT_WORDS {
+                        let mut bytes = [0u8; 4];
+                        bytes[..chunk.len()].copy_from_slice(chunk);
+                        value[i] = u32::from_be_bytes(bytes);
                     }
-                    
-                    let output = Digest::new(value);
+                }
 
-                    // Clean up the context before returning the controller
-                    self.controller.cleanup_context();
+                let output = Digest::new(value);
+
+                // Clean up the context before returning the controller
+                self.controller.cleanup_context();
 
                 Ok((output, self.controller))
             }
@@ -218,20 +220,20 @@ mod tests {
     use super::*;
     use crate::hace_controller::HaceController;
     use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
-    
+
     #[test]
     fn test_owned_digest_pattern() {
         // This test demonstrates the owned pattern usage
         // Note: In a real test, you'd need actual hardware or mocking
-        
+
         // Example of what digest operations would look like on real hardware:
         // let controller = HaceController::new(hace_peripheral);
         // let context = controller.init(Sha2_256::default())?;
         // let context = context.update(b"hello")?;
-        // let context = context.update(b" world")?;  
+        // let context = context.update(b" world")?;
         // let (digest, controller) = context.finalize()?;
         // // Controller is now recovered for reuse
-        
+
         // This test verifies compilation
         assert!(true);
     }
@@ -241,7 +243,7 @@ mod tests {
         // Demonstrate controller storage pattern - impossible with scoped API
         // This simulates what a server would do to store controller wrappers
         // Note: Only one can be active at a time due to shared hardware context
-        
+
         struct SimpleSessionManager {
             session_sha256: Option<OwnedDigestContext<Sha2_256>>,
             session_sha384: Option<OwnedDigestContext<Sha2_384>>,

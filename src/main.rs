@@ -123,38 +123,43 @@ macro_rules! debug_halt {
 /// Test the owned digest API demonstrating move-based resource management
 fn test_owned_digest_api(uart: &mut UartController<'_>) {
     writeln!(uart, "\r\nRunning owned digest API tests...\r\n").unwrap();
-    
+
     // Get a fresh HACE peripheral for owned API testing
     let peripherals = unsafe { Peripherals::steal() };
     let hace = peripherals.hace;
-    
+
     // Test SHA256 with owned API
     writeln!(uart, "Testing owned SHA256 API...").unwrap();
     test_owned_sha256(uart, hace);
-    
+
     // Get fresh peripheral for SHA384 test (since it was consumed)
     let peripherals = unsafe { Peripherals::steal() };
     let hace = peripherals.hace;
-    
+
     writeln!(uart, "Testing owned SHA384 API...").unwrap();
     test_owned_sha384(uart, hace);
-    
+
     // Get fresh peripheral for SHA512 test
     let peripherals = unsafe { Peripherals::steal() };
     let hace = peripherals.hace;
-    
+
     writeln!(uart, "Testing owned SHA512 API...").unwrap();
     test_owned_sha512(uart, hace);
-    
+
     writeln!(uart, "All owned digest API tests completed!\r\n").unwrap();
 }
 
 /// Validate digest against known test vector
-fn validate_digest(actual: &[u32], expected: &[u8], algorithm: &str, uart: &mut UartController<'_>) -> bool {
+fn validate_digest(
+    actual: &[u32],
+    expected: &[u8],
+    algorithm: &str,
+    uart: &mut UartController<'_>,
+) -> bool {
     // Convert actual u32 array to bytes in big-endian format and compare
     let mut matches = true;
     let mut byte_index = 0;
-    
+
     for &word in actual {
         let word_bytes = word.to_be_bytes();
         for &byte in &word_bytes {
@@ -170,7 +175,7 @@ fn validate_digest(actual: &[u32], expected: &[u8], algorithm: &str, uart: &mut 
             break;
         }
     }
-    
+
     if matches && byte_index == expected.len() {
         writeln!(uart, "{} test vector validation: PASSED ✅", algorithm).unwrap();
         true
@@ -200,7 +205,7 @@ fn validate_digest(actual: &[u32], expected: &[u8], algorithm: &str, uart: &mut 
 /// Test owned SHA256 API demonstrating move semantics
 fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
     let controller = HaceController::new(hace);
-    
+
     // Initialize digest context - controller wrapper is moved
     let context = match controller.init(Sha2_256) {
         Ok(ctx) => ctx,
@@ -209,7 +214,7 @@ fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
             return;
         }
     };
-    
+
     // Test with known test vector: "abc" -> SHA256
     // Expected: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
     let context = match context.update(b"abc") {
@@ -219,7 +224,7 @@ fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
             return;
         }
     };
-    
+
     // Finalize and get both digest and controller back
     let (digest, _recovered_controller) = match context.finalize() {
         Ok((dig, ctrl)) => (dig, ctrl),
@@ -228,15 +233,16 @@ fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
             return;
         }
     };
-    
+
     writeln!(uart, "SHA256 owned API digest: {:02x?}", &digest.value[..8]).unwrap();
-    
+
     // Known test vector for "abc"
     let expected_sha256 = [
-        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
-        0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22,
+        0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
+        0x15, 0xad,
     ];
-    
+
     if validate_digest(&digest.value, &expected_sha256, "SHA256", uart) {
         writeln!(uart, "SHA256 owned API: PASSED ✅").unwrap();
     } else {
@@ -247,68 +253,70 @@ fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
 /// Test owned SHA384 API demonstrating controller recovery
 fn test_owned_sha384(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
     let controller = HaceController::new(hace);
-    
+
     // Test with known test vector: "abc" -> SHA384
     // Expected: cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7
     let context = controller.init(Sha2_384).unwrap();
     let context = context.update(b"abc").unwrap();
-    
+
     let (digest, recovered_controller) = context.finalize().unwrap();
-    
+
     writeln!(uart, "SHA384 owned API digest: {:02x?}", &digest.value[..8]).unwrap();
-    
+
     // Known test vector for "abc"
     let expected_sha384 = [
-        0xcb, 0x00, 0x75, 0x3f, 0x45, 0xa3, 0x5e, 0x8b, 0xb5, 0xa0, 0x3d, 0x69, 0x9a, 0xc6, 0x50, 0x07,
-        0x27, 0x2c, 0x32, 0xab, 0x0e, 0xde, 0xd1, 0x63, 0x1a, 0x8b, 0x60, 0x5a, 0x43, 0xff, 0x5b, 0xed,
-        0x80, 0x86, 0x07, 0x2b, 0xa1, 0xe7, 0xcc, 0x23, 0x58, 0xba, 0xec, 0xa1, 0x34, 0xc8, 0x25, 0xa7
+        0xcb, 0x00, 0x75, 0x3f, 0x45, 0xa3, 0x5e, 0x8b, 0xb5, 0xa0, 0x3d, 0x69, 0x9a, 0xc6, 0x50,
+        0x07, 0x27, 0x2c, 0x32, 0xab, 0x0e, 0xde, 0xd1, 0x63, 0x1a, 0x8b, 0x60, 0x5a, 0x43, 0xff,
+        0x5b, 0xed, 0x80, 0x86, 0x07, 0x2b, 0xa1, 0xe7, 0xcc, 0x23, 0x58, 0xba, 0xec, 0xa1, 0x34,
+        0xc8, 0x25, 0xa7,
     ];
-    
+
     if validate_digest(&digest.value, &expected_sha384, "SHA384", uart) {
         writeln!(uart, "SHA384 owned API: PASSED ✅").unwrap();
     } else {
         writeln!(uart, "SHA384 owned API: FAILED ❌").unwrap();
     }
-    
+
     // Demonstrate controller recovery by using it again
     let context2 = recovered_controller.init(Sha2_384).unwrap();
     let context2 = context2.update(b"Reused controller").unwrap();
     let (_digest2, _final_controller) = context2.finalize().unwrap();
-    
+
     writeln!(uart, "Controller recovery: PASSED ✅").unwrap();
 }
 
 /// Test owned SHA512 API demonstrating cancellation
 fn test_owned_sha512(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
     let controller = HaceController::new(hace);
-    
+
     let context = controller.init(Sha2_512).unwrap();
     let context = context.update(b"This will be").unwrap();
     let context = context.update(b" cancelled").unwrap();
-    
+
     // Demonstrate cancellation - returns controller without computing digest
     let recovered_controller = context.cancel();
-    
+
     writeln!(uart, "SHA512 cancellation: PASSED ✅").unwrap();
-    
+
     // Use recovered controller for actual computation with known test vector
     // Test with known test vector: "abc" -> SHA512
     // Expected: ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f
     let context = recovered_controller.init(Sha2_512).unwrap();
     let context = context.update(b"abc").unwrap();
-    
+
     let (digest, _final_controller) = context.finalize().unwrap();
-    
+
     writeln!(uart, "SHA512 owned API digest: {:02x?}", &digest.value[..8]).unwrap();
-    
+
     // Known test vector for "abc"
     let expected_sha512 = [
-        0xdd, 0xaf, 0x35, 0xa1, 0x93, 0x61, 0x7a, 0xba, 0xcc, 0x41, 0x73, 0x49, 0xae, 0x20, 0x41, 0x31,
-        0x12, 0xe6, 0xfa, 0x4e, 0x89, 0xa9, 0x7e, 0xa2, 0x0a, 0x9e, 0xee, 0xe6, 0x4b, 0x55, 0xd3, 0x9a,
-        0x21, 0x92, 0x99, 0x2a, 0x27, 0x4f, 0xc1, 0xa8, 0x36, 0xba, 0x3c, 0x23, 0xa3, 0xfe, 0xeb, 0xbd,
-        0x45, 0x4d, 0x44, 0x23, 0x64, 0x3c, 0xe8, 0x0e, 0x2a, 0x9a, 0xc9, 0x4f, 0xa5, 0x4c, 0xa4, 0x9f
+        0xdd, 0xaf, 0x35, 0xa1, 0x93, 0x61, 0x7a, 0xba, 0xcc, 0x41, 0x73, 0x49, 0xae, 0x20, 0x41,
+        0x31, 0x12, 0xe6, 0xfa, 0x4e, 0x89, 0xa9, 0x7e, 0xa2, 0x0a, 0x9e, 0xee, 0xe6, 0x4b, 0x55,
+        0xd3, 0x9a, 0x21, 0x92, 0x99, 0x2a, 0x27, 0x4f, 0xc1, 0xa8, 0x36, 0xba, 0x3c, 0x23, 0xa3,
+        0xfe, 0xeb, 0xbd, 0x45, 0x4d, 0x44, 0x23, 0x64, 0x3c, 0xe8, 0x0e, 0x2a, 0x9a, 0xc9, 0x4f,
+        0xa5, 0x4c, 0xa4, 0x9f,
     ];
-    
+
     if validate_digest(&digest.value, &expected_sha512, "SHA512", uart) {
         writeln!(uart, "SHA512 owned API: PASSED ✅").unwrap();
     } else {
