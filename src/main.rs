@@ -200,7 +200,7 @@ fn validate_digest(actual: &[u32], expected: &[u8], algorithm: &str, uart: &mut 
 fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
     let controller = HaceController::new(hace);
     
-    // Initialize owned context - controller is moved
+    // Initialize digest context - controller wrapper is moved
     let context = match controller.init(Sha2_256) {
         Ok(ctx) => ctx,
         Err(_) => {

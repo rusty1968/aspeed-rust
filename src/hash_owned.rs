@@ -3,10 +3,14 @@
 //! OpenProt owned digest API implementation for ASPEED HACE controller
 //!
 //! This module implements the move-based digest API from openprot-hal-blocking
-//! which enables persistent session storage, multiple concurrent contexts,
+//! which provides exclusive access to the shared HACE hardware controller
 //! and compile-time prevention of use-after-finalize.
 //!
-//! Unlike the scoped API, contexts created here have no lifetime constraints
+//! Note: The underlying cryptographic context is shared globally in .ram_nc section.
+//! The "owned" aspect refers to exclusive ownership of the HaceController wrapper,
+//! not the actual hardware context. Only one digest operation can be active at a time.
+//!
+//! Unlike the scoped API, the controller wrapper has no lifetime constraints
 //! and can be stored in structs, moved across functions, and persist across IPC.
 //!
 
@@ -47,10 +51,12 @@ impl IntoHashAlgo for Sha2_512 {
     }
 }
 
-/// Owned digest context that wraps the HACE controller and algorithm state
+/// Owned digest context that wraps the HACE controller for exclusive access
 /// 
-/// This context owns the controller and has no lifetime constraints.
-/// It can be stored in structs, moved across functions, and persist across IPC boundaries.
+/// This context owns the controller wrapper (not the underlying shared hardware context)
+/// and provides exclusive access to the HACE hardware during digest operations.
+/// It has no lifetime constraints and can be stored in structs, moved across functions,
+/// and persist across IPC boundaries.
 pub struct OwnedDigestContext<T: DigestAlgorithm + IntoHashAlgo> {
     controller: HaceController, 
     _phantom: PhantomData<T>,
@@ -232,8 +238,9 @@ mod tests {
 
     #[test]
     fn test_session_storage_pattern() {
-        // Demonstrate session storage pattern - impossible with scoped API
-        // This simulates what a server would do to store digest contexts
+        // Demonstrate controller storage pattern - impossible with scoped API
+        // This simulates what a server would do to store controller wrappers
+        // Note: Only one can be active at a time due to shared hardware context
         
         struct SimpleSessionManager {
             session_sha256: Option<OwnedDigestContext<Sha2_256>>,
@@ -250,7 +257,7 @@ mod tests {
                 }
             }
 
-            // Multiple sessions can coexist because contexts are owned
+            // Multiple controller wrappers can be stored (but only one can be active at a time)
             fn create_sha256_session(&mut self) -> Result<(), Infallible> {
                 let controller = self.controller.take().unwrap();
                 let context = controller.init(Sha2_256::default())?;
