@@ -177,27 +177,27 @@ fn validate_digest(
     }
 
     if matches && byte_index == expected.len() {
-        writeln!(uart, "{} test vector validation: PASSED ✅", algorithm).unwrap();
+        writeln!(uart, "{algorithm} test vector validation: PASSED ✅").unwrap();
         true
     } else {
-        writeln!(uart, "{} test vector validation: FAILED ❌", algorithm).unwrap();
+        writeln!(uart, "{algorithm} test vector validation: FAILED ❌").unwrap();
         write!(uart, "Expected: ").unwrap();
         for &byte in expected {
-            write!(uart, "{:02x}", byte).unwrap();
+            write!(uart, "{byte:02x}").unwrap();
         }
-        writeln!(uart, "").unwrap();
+        writeln!(uart).unwrap();
         write!(uart, "Actual:   ").unwrap();
         let mut byte_index = 0;
         for &word in actual {
             let word_bytes = word.to_be_bytes();
             for &byte in &word_bytes {
                 if byte_index < expected.len() {
-                    write!(uart, "{:02x}", byte).unwrap();
+                    write!(uart, "{byte:02x}").unwrap();
                     byte_index += 1;
                 }
             }
         }
-        writeln!(uart, "").unwrap();
+        writeln!(uart).unwrap();
         false
     }
 }
@@ -207,32 +207,14 @@ fn test_owned_sha256(uart: &mut UartController<'_>, hace: ast1060_pac::Hace) {
     let controller = HaceController::new(hace);
 
     // Initialize digest context - controller wrapper is moved
-    let context = match controller.init(Sha2_256) {
-        Ok(ctx) => ctx,
-        Err(_) => {
-            writeln!(uart, "Failed to initialize SHA256 context").unwrap();
-            return;
-        }
-    };
+    let context = controller.init(Sha2_256).unwrap();
 
     // Test with known test vector: "abc" -> SHA256
     // Expected: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
-    let context = match context.update(b"abc") {
-        Ok(ctx) => ctx,
-        Err(_) => {
-            writeln!(uart, "Failed to update SHA256 context").unwrap();
-            return;
-        }
-    };
+    let context = context.update(b"abc").unwrap();
 
     // Finalize and get both digest and controller back
-    let (digest, _recovered_controller) = match context.finalize() {
-        Ok((dig, ctrl)) => (dig, ctrl),
-        Err(_) => {
-            writeln!(uart, "Failed to finalize SHA256 context").unwrap();
-            return;
-        }
-    };
+    let (digest, _recovered_controller) = context.finalize().unwrap();
 
     writeln!(uart, "SHA256 owned API digest: {:02x?}", &digest.value[..8]).unwrap();
 

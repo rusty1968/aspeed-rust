@@ -1,13 +1,13 @@
 // Licensed under the Apache-2.0 license
 
-//! OpenProt owned digest API implementation for ASPEED HACE controller
+//! `OpenProt` owned digest API implementation for ASPEED HACE controller
 //!
 //! This module implements the move-based digest API from openprot-hal-blocking
 //! which provides exclusive access to the shared HACE hardware controller
 //! and compile-time prevention of use-after-finalize.
 //!
-//! Note: The underlying cryptographic context is shared globally in .ram_nc section.
-//! The "owned" aspect refers to exclusive ownership of the HaceController wrapper,
+//! Note: The underlying cryptographic context is shared globally in `.ram_nc` section.
+//! The "owned" aspect refers to exclusive ownership of the `HaceController` wrapper,
 //! not the actual hardware context. Only one digest operation can be active at a time.
 //!
 //! Unlike the scoped API, the controller wrapper has no lifetime constraints
@@ -26,7 +26,7 @@ pub use crate::hash::{Digest48, Digest64, Sha1, Sha224, Sha256, Sha384, Sha512};
 // Also re-export OpenProt digest types for convenience
 pub use openprot_hal_blocking::digest::{Digest, Sha2_256, Sha2_384, Sha2_512};
 
-/// Trait to convert digest algorithm types to our internal HashAlgo enum
+/// Trait to convert digest algorithm types to our internal `HashAlgo` enum
 pub trait IntoHashAlgo {
     fn to_hash_algo() -> HashAlgo;
 }
@@ -161,6 +161,9 @@ macro_rules! impl_owned_digest {
             }
 
             fn finalize(mut self) -> Result<(Self::Output, Self::Controller), Self::Error> {
+                use openprot_hal_blocking::digest::Digest;
+                const OUTPUT_WORDS: usize = <$algo as DigestAlgorithm>::OUTPUT_BITS / 32;
+
                 // Fill padding and finalize
                 self.controller.fill_padding(0);
                 let digest_len = self.controller.algo.digest_size();
@@ -180,8 +183,6 @@ macro_rules! impl_owned_digest {
                 let slice = unsafe { core::slice::from_raw_parts(digest_ptr, digest_len) };
 
                 // Create OpenProt Digest from the raw bytes using constructor
-                use openprot_hal_blocking::digest::Digest;
-                const OUTPUT_WORDS: usize = <$algo as DigestAlgorithm>::OUTPUT_BITS / 32;
                 let mut value = [0u32; OUTPUT_WORDS];
 
                 // Copy bytes to u32 array in big-endian format
