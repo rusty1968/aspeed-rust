@@ -147,6 +147,9 @@ fn test_owned_digest_api(uart: &mut UartController<'_>) {
     test_owned_sha512(uart, hace);
     
     writeln!(uart, "All owned digest API tests completed!\r\n").unwrap();
+    
+    // Print stack profiling results if enabled  
+    aspeed_ddk::hash_owned::print_stack_measurements(uart);
 }
 
 /// Test owned SHA256 API demonstrating move semantics
