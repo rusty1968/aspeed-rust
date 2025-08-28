@@ -24,6 +24,7 @@ test-hash = []
 spi_dma = []
 spi_dma_write = []
 spi_monitor = []
+stack-profiling = []
 
 [dependencies]
 ast1060-pac = { git = "https://github.com/AspeedTech-BMC/ast1060-pac.git", features = ["rt"] }

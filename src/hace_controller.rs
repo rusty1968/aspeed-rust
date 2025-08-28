@@ -320,7 +320,6 @@ impl HashAlgo {
 pub struct HaceController {
     pub hace: Hace,
     pub algo: HashAlgo,
-    pub aspeed_hash_ctx: AspeedHashContext, // Own the context instead of using a pointer
 }
 
 impl HaceController {
@@ -329,7 +328,6 @@ impl HaceController {
         Self {
             hace,
             algo: HashAlgo::SHA256,
-            aspeed_hash_ctx: AspeedHashContext::new(), // Create a new context instance
         }
     }
 

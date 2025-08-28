@@ -64,22 +64,26 @@ def check_qemu_exists():
         print_warning("Or set QEMU_CMD environment variable to the full path")
         return False
 
-def build_project(build_mode):
+def build_project(build_mode, features=None):
     """Build the project using cargo xtask"""
-    print_step(f"Building project in {build_mode} mode...")
+    feature_str = f" with features: {features}" if features else ""
+    print_step(f"Building project in {build_mode} mode{feature_str}...")
     project_root = os.getcwd()  # Use current working directory    
+    
     try:
+        cmd = ["cargo", "xtask", "build"]
         if build_mode == "release":
-            subprocess.run(["cargo", "xtask", "build", "--release"], 
-                         check=True, cwd=project_root)
+            cmd.append("--release")
             binary_path = f"target/{TARGET}/release/aspeed-ddk"
         else:
-            subprocess.run(["cargo", "xtask", "build"], 
-                         check=True, cwd=project_root)
             binary_path = f"target/{TARGET}/debug/aspeed-ddk"
-
+        
+        if features:
+            cmd.extend(["--features", features])
+            
+        subprocess.run(cmd, check=True, cwd=project_root)
+        
         full_binary_path = os.path.join(project_root, binary_path)
-
         if not os.path.isfile(full_binary_path):
             print_error(f"Binary not found at {full_binary_path}")
             return None
@@ -206,6 +210,10 @@ def main():
                        help="Capture QEMU output to file")
     parser.add_argument("--timeout", type=int, default=TIMEOUT_SECONDS,
                        help=f"Set timeout in seconds (default: {TIMEOUT_SECONDS})")
+    parser.add_argument("--features", metavar="FEATURES",
+                       help="Comma-separated list of features to enable (e.g., 'stack-profiling,test-hash')")
+    parser.add_argument("--stack-profiling", action="store_true",
+                       help="Enable stack profiling (shortcut for --features stack-profiling)")
     
     args = parser.parse_args()
     
@@ -220,7 +228,18 @@ def main():
     
     # Build project
     build_mode = "release" if args.release else "debug"
-    binary_path = build_project(build_mode)
+    
+    # Handle features
+    features = None
+    if args.stack_profiling:
+        if args.features:
+            features = f"stack-profiling,{args.features}"
+        else:
+            features = "stack-profiling"
+    elif args.features:
+        features = args.features
+    
+    binary_path = build_project(build_mode, features)
     if not binary_path:
         return 1
     
