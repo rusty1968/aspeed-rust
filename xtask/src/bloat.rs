@@ -123,6 +123,7 @@ fn generate_size_comparison(output_dir: &str) -> Result<()> {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)] // Json and Csv variants reserved for future use
 pub enum BloatFormat {
     Table,
     Json,
