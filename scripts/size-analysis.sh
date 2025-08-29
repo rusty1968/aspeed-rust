@@ -1,4 +1,5 @@
 #!/bin/bash
+# Licensed under the Apache-2.0 license
 # Binary size analysis script for local development
 # Usage: ./scripts/size-analysis.sh [baseline-branch]
 
