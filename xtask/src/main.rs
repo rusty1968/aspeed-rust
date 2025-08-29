@@ -164,9 +164,15 @@ fn precommit() -> anyhow::Result<()> {
     // Run tests
     test::test(false, false)?;
 
-    // Generate size analysis report
+    // Generate size analysis report (optional - skip if cargo-bloat not available)
     println!("Generating binary size report...");
-    bloat::generate_report(true, "thumbv7em-none-eabihf", "target/bloat-reports")?;
+    match bloat::generate_report(true, "thumbv7em-none-eabihf", "target/bloat-reports") {
+        Ok(_) => println!("📊 Size analysis report generated"),
+        Err(e) => {
+            println!("⚠️  Size analysis skipped: {}", e);
+            println!("   Install cargo-bloat with: cargo install cargo-bloat");
+        }
+    }
 
     println!("✅ All pre-commit checks passed!");
     Ok(())

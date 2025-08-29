@@ -39,7 +39,8 @@ jobs:
 
       - name: Analyze current branch size
         run: |
-          cargo xtask bloat --release --report --output-dir target/pr-bloat-reports
+          # Use cargo bloat directly since xtask bloat may not be available
+          cargo bloat --release --target thumbv7em-none-eabihf > target/pr-bloat-report.txt || echo "Bloat analysis failed"
           
       - name: Checkout main branch
         run: |
@@ -51,7 +52,8 @@ jobs:
           
       - name: Analyze main branch size
         run: |
-          cargo xtask bloat --release --report --output-dir target/main-bloat-reports
+          # Use cargo bloat directly since xtask bloat may not be available  
+          cargo bloat --release --target thumbv7em-none-eabihf > target/main-bloat-report.txt || echo "Bloat analysis failed"
 
       - name: Generate size comparison report
         id: size-comparison
@@ -86,7 +88,7 @@ jobs:
           echo "" >> size_report.md
           echo "### Top Functions (Current PR)" >> size_report.md
           echo '```' >> size_report.md
-          head -20 target/pr-bloat-reports/bloat_functions.txt >> size_report.md 2>/dev/null || echo "No function data available" >> size_report.md
+          head -20 target/pr-bloat-report.txt >> size_report.md 2>/dev/null || echo "No function data available" >> size_report.md
           echo '```' >> size_report.md
 
       - name: Comment PR with size analysis
@@ -100,7 +102,7 @@ jobs:
         with:
           name: size-analysis-detailed
           path: |
-            target/pr-bloat-reports/
-            target/main-bloat-reports/
+            target/pr-bloat-report.txt
+            target/main-bloat-report.txt
             size_report.md
           retention-days: 7

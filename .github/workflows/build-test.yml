@@ -47,7 +47,7 @@ jobs:
 
       - name: Upload binary size reports
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && hashFiles('target/bloat-reports/*') != ''
         with:
           name: bloat-reports
           path: target/bloat-reports/
