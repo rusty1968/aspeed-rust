@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-22.04
     
     permissions:
-      pull-requests: write
       contents: read
 
     steps:
@@ -91,11 +90,25 @@ jobs:
           head -20 target/pr-bloat-report.txt >> size_report.md 2>/dev/null || echo "No function data available" >> size_report.md
           echo '```' >> size_report.md
 
-      - name: Comment PR with size analysis
-        uses: thollander/actions-comment-pull-request@v2
-        with:
-          filePath: size_report.md
-          comment_tag: size-analysis
+      - name: Output size analysis to workflow summary
+        run: |
+          echo "## 📊 Binary Size Analysis" >> $GITHUB_STEP_SUMMARY
+          cat size_report.md >> $GITHUB_STEP_SUMMARY
+          
+      - name: Output size analysis to console
+        run: |
+          echo "=== Binary Size Analysis ==="
+          cat size_report.md
+          
+      - name: Check for significant size increase
+        run: |
+          # Extract size difference from the report
+          if grep -q "⚠️ Binary size increased by more than 10KB" size_report.md; then
+            echo "::error::Binary size increased by more than 10KB! Please review."
+            exit 1
+          elif grep -q "🚨 Binary size increased significantly" size_report.md; then
+            echo "::warning::Binary size increased significantly. Consider optimization."
+          fi
           
       - name: Upload detailed reports
         uses: actions/upload-artifact@v4
