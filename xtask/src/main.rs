@@ -3,8 +3,8 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-mod build;
 mod bloat;
+mod build;
 mod clippy;
 mod docs;
 mod format;

@@ -28,9 +28,9 @@ pub fn analyze_bloat(release: bool, target: &str, format: BloatFormat) -> Result
         }
     }
 
-    let output = cmd
-        .output()
-        .context("Failed to run cargo bloat - make sure it's installed with 'cargo install cargo-bloat'")?;
+    let output = cmd.output().context(
+        "Failed to run cargo bloat - make sure it's installed with 'cargo install cargo-bloat'",
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -55,29 +55,30 @@ pub fn generate_report(release: bool, target: &str, output_dir: &str) -> Result<
     let reports = [
         ("functions", "--crates"),
         ("crates", "--crates"),
-        ("time", "--time"), 
+        ("time", "--time"),
     ];
 
     for (name, flag) in &reports {
         let output_file = format!("{}/bloat_{}.txt", output_dir, name);
-        
+
         let mut cmd = Command::new("cargo");
         cmd.arg("bloat");
-        
+
         if release {
             cmd.arg("--release");
         }
-        
+
         cmd.args(["--target", target]);
         cmd.arg(flag);
 
-        let output = cmd.output()
+        let output = cmd
+            .output()
             .with_context(|| format!("Failed to generate {} report", name))?;
 
         if output.status.success() {
             std::fs::write(&output_file, &output.stdout)
                 .with_context(|| format!("Failed to write report to {}", output_file))?;
-            
+
             println!("📊 Generated {}", output_file);
         }
     }
@@ -96,7 +97,7 @@ fn generate_size_comparison(output_dir: &str) -> Result<()> {
     // 1. Store historical size data
     // 2. Compare with baseline
     // 3. Detect regressions
-    
+
     let comparison_file = format!("{}/size_comparison.md", output_dir);
     let comparison_content = r#"# Binary Size Comparison
 
