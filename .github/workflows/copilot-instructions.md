@@ -64,9 +64,9 @@ mod tests {
     
     #[test]
     fn test_with_heapless() {
-        // Heapless is also fine in tests
+        // NOTE: Heapless is STRICTLY FORBIDDEN in production code (see guidelines above).
+        // It is permitted here ONLY because this is test code.
         use heapless::Vec;
-        let mut input: Vec<u8, 8> = Vec::new();
         input.extend_from_slice(&[1, 2, 3]).unwrap();
         
         let mut output = [0u8; 16];
