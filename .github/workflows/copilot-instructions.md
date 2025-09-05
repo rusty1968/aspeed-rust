@@ -1,9 +1,4 @@
-
 ## Copilot Code Generation Guidelines
-
-
-
-
 When generating code, always prioritize these patterns:
 
 
