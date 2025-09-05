@@ -16,6 +16,8 @@ When generating code, always prioritize these patterns:
 
 - **NEVER** use crates or features that require heap allocation in production code
 - **DO NOT** use the `heapless` crate in production paths despite its name suggesting compatibility
+  - *Rationale: While heapless is no_std, it still uses stack allocation with unpredictable growth patterns*
+  - *Use fixed-size arrays and slices instead for predictable memory usage*
 - **DO NOT** use any crate that depends on the `alloc` crate without feature gating
 - **ALWAYS** use fixed-size arrays, slices, or static memory allocation
 - **ALWAYS** design APIs to accept and return memory provided by the caller
