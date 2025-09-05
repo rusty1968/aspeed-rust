@@ -264,6 +264,8 @@ mod test_helpers {
 
 **Note**: Test code (marked with `#[cfg(test)]`) may use unwrap(), expect(), direct indexing, and magic numbers for ergonomics. Hardware and crypto safety rules still apply to tests.
 
+**Clarification**: Only panic-prone `unwrap` methods are forbidden. Safe methods like `unwrap_or()`, `unwrap_or_else()`, and `unwrap_or_default()` are acceptable in production code as they cannot panic.
+
 | Forbidden Pattern | Required Alternative | Test Exception |
 |-------------------|----------------------|----------------|
 | `value.unwrap()` | `match value { Some(v) => v, None => return Err(...) }` | ✅ OK in tests |
