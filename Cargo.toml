@@ -38,8 +38,8 @@ heapless = "0.8.0"
 nb = "1.1.0"
 paste = "1.0"
 
-openprot-hal-blocking = { git="https://github.com/OpenPRoT/openprot" }
-zerocopy = { version = "0.8.25", features = ["derive"] }
+openprot-hal-blocking = { git="https://github.com/OpenPRoT/openprot", default-features = false }
+zerocopy = { version = "0.8.25", features = ["derive"], default-features = false }
 
 cortex-m = { version = "0.7.5" }
 cortex-m-rt = { version = "0.6.5", features = ["device"] }
