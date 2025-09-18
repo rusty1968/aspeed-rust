@@ -1,5 +1,12 @@
 // Licensed under the Apache-2.0 license
 
+//! Common types and constants for ASPEED I2C driver modules.
+//!
+//! This module provides shared definitions for error handling, register fields,
+//! and protocol utilities used across the I2C driver implementation.
+
+// Licensed under the Apache-2.0 license
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum I2cSpeed {
@@ -23,6 +30,25 @@ pub enum I2cSEvent {
     SlaveRdProc,
     SlaveWrRecvd,
     SlaveStop,
+}
+
+/// Status information for I2C slave operations
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SlaveStatus {
+    /// Whether slave mode is currently enabled
+    pub enabled: bool,
+    /// Current slave address (if enabled)
+    pub address: Option<u8>,
+    /// Whether there's data available to read
+    pub data_available: bool,
+    /// Number of bytes in receive buffer
+    pub rx_buffer_count: usize,
+    /// Number of bytes in transmit buffer
+    pub tx_buffer_count: usize,
+    /// Last slave event that occurred
+    pub last_event: Option<I2cSEvent>,
+    /// Whether an error condition exists
+    pub error: bool,
 }
 
 pub struct TimingConfig {

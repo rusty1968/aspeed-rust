@@ -3,7 +3,8 @@
 use crate::common::{DummyDelay, NoOpLogger, UartLogger};
 use crate::i2c::ast1060_i2c::Ast1060I2c;
 use crate::i2c::common::{I2cConfigBuilder, I2cSpeed, I2cXferMode};
-use crate::i2c::i2c_controller::{HardwareInterface, I2cController};
+use crate::i2c::i2c_controller::I2cController;
+use crate::i2c::traits::{I2cHardwareCore, I2cMaster};
 use crate::pinctrl;
 use crate::uart::{self, Config, UartController};
 use ast1060_pac::Peripherals;
