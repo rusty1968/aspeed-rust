@@ -10,20 +10,19 @@
 // Licensed under the Apache-2.0 license
 
 use crate::common::{DmaBuffer, DummyDelay, Logger};
-#[cfg(feature = "i2c_target")]
-use openprot_hal_blocking::i2c_hardware::slave::{I2cSEvent, I2cSlaveInterrupts};
 use crate::i2c::common::{I2cConfig, I2cSpeed, I2cXferMode, TimingConfig};
 use ast1060_pac::{I2cglobal, Scu};
 use core::cmp::min;
 use core::fmt::Write;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "i2c_target")]
+use openprot_hal_blocking::i2c_hardware::slave::{I2cSEvent, I2cSlaveInterrupts};
 use openprot_hal_blocking::i2c_hardware::{I2cHardwareCore, I2cMaster};
+use proposed_traits::i2c_target::I2CTarget;
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::i2c::{NoAcknowledgeSource, Operation, SevenBitAddress};
-#[cfg(feature = "i2c_target")]
-use proposed_traits::i2c_target::I2CTarget;
 
 static I2CGLOBAL_INIT: AtomicBool = AtomicBool::new(false);
 
@@ -311,15 +310,6 @@ macro_rules! i2c_error {
         $logger.error(buf.as_str());
     };
 }
-
-/// Address conversion utility for OpenProt slave traits
-/// Converts SevenBitAddress to u8 for hardware compatibility
-fn address_to_u8(address: SevenBitAddress) -> Result<u8, Error> {
-    // SevenBitAddress is just a u8 wrapper, so we can directly access it
-    Ok(address)
-}
-
-
 
 // I2cHardwareCore implementation - core hardware operations
 impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cHardwareCore for Ast1060I2c<'_, I2C, I2CT, L> {
