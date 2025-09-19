@@ -33,7 +33,6 @@ fn address_to_u8(address: SevenBitAddress) -> Result<u8, Error> {
 // I2cSlaveCore implementation - core slave functionality
 // ================================================================================================
 
-#[cfg(feature = "i2c_target")]
 impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cSlaveCore<SevenBitAddress>
     for Ast1060I2c<'_, I2C, I2CT, L>
 {
@@ -86,7 +85,6 @@ impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cSlaveCore<SevenBitAddress>
 // I2cSlaveInterrupts implementation - interrupt and status management
 // ================================================================================================
 
-#[cfg(feature = "i2c_target")]
 impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cSlaveInterrupts<SevenBitAddress>
     for Ast1060I2c<'_, I2C, I2CT, L>
 {
@@ -127,7 +125,6 @@ impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cSlaveInterrupts<SevenBitAddre
 
 const I2C_SLAVE_BUF_SIZE: usize = 256;
 
-#[cfg(feature = "i2c_target")]
 impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cSlaveBuffer<SevenBitAddress>
     for Ast1060I2c<'_, I2C, I2CT, L>
 {
@@ -296,7 +293,6 @@ impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cSlaveBuffer<SevenBitAddress>
 // Event Synchronization - I2cSlaveEventSync Trait
 // ================================================================================================
 
-#[cfg(feature = "i2c_target")]
 impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cSlaveEventSync<SevenBitAddress>
     for Ast1060I2c<'_, I2C, I2CT, L>
 {
