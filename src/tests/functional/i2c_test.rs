@@ -4,7 +4,10 @@ use crate::common::{DummyDelay, NoOpLogger, UartLogger};
 use crate::i2c::ast1060_i2c::Ast1060I2c;
 use crate::i2c::common::{I2cConfigBuilder, I2cSpeed, I2cXferMode};
 use crate::i2c::i2c_controller::I2cController;
-use crate::i2c::traits::{I2cHardwareCore, I2cMaster};
+
+use openprot_hal_blocking::i2c_hardware::I2cHardwareCore;
+use openprot_hal_blocking::i2c_hardware::I2cMaster;
+
 use crate::pinctrl;
 use crate::uart::{self, Config, UartController};
 use ast1060_pac::Peripherals;
@@ -123,7 +126,9 @@ pub fn test_i2c_master(uart: &mut UartController<'_>) {
     };
 
     pinctrl::Pinctrl::apply_pinctrl_group(pinctrl::PINCTRL_I2C1);
-    i2c1.hardware.init(&mut i2c1.config);
+    i2c1.hardware
+        .init(&mut i2c1.config)
+        .expect("Failed to initialize I2C hardware");
 
     let addr = 0x2e; //device ADT7490
     let mut buf = [0x4e];
@@ -280,7 +285,9 @@ pub fn test_i2c_slave(uart: &mut UartController<'_>) {
         };
 
         pinctrl::Pinctrl::apply_pinctrl_group(pinctrl::PINCTRL_I2C0);
-        i2c0.hardware.init(&mut i2c0.config);
+        i2c0.hardware
+            .init(&mut i2c0.config)
+            .expect("Failed to initialize I2C hardware");
 
         match i2c0
             .hardware

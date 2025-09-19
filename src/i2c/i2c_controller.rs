@@ -10,8 +10,8 @@
 
 use crate::common::{Logger, NoOpLogger};
 use crate::i2c::common::I2cConfig;
-use crate::i2c::traits::I2cMaster;
 use embedded_hal::i2c::{Operation, SevenBitAddress};
+use openprot_hal_blocking::i2c_hardware::I2cMaster;
 
 pub struct I2cController<H: I2cMaster, L: Logger = NoOpLogger> {
     pub hardware: H,
