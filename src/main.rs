@@ -30,7 +30,7 @@ use panic_halt as _;
 use aspeed_ddk::hash_owned::{Sha2_256, Sha2_384, Sha2_512};
 use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 
-use proposed_traits::system_control::ResetControl;
+use openprot_hal_blocking::system_control::ResetControl;
 
 use core::ptr::{read_volatile, write_volatile};
 use cortex_m_rt::entry;
