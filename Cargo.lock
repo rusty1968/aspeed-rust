@@ -357,7 +357,7 @@ checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
 [[package]]
 name = "openprot-hal-blocking"
 version = "0.1.0"
-source = "git+https://github.com/rusty1968/openprot.git?rev=7e43225fbee45868906c48f92686b3851f63a0e3#7e43225fbee45868906c48f92686b3851f63a0e3"
+source = "git+https://github.com/rusty1968/openprot.git?rev=289bde2041eb8534364803dd7406470bce5338de#289bde2041eb8534364803dd7406470bce5338de"
 dependencies = [
  "embedded-hal 1.0.0",
  "rand_core 0.9.3",
@@ -369,7 +369,7 @@ dependencies = [
 [[package]]
 name = "openprot-hal-nb"
 version = "0.1.0"
-source = "git+https://github.com/rusty1968/openprot.git?rev=7e43225fbee45868906c48f92686b3851f63a0e3#7e43225fbee45868906c48f92686b3851f63a0e3"
+source = "git+https://github.com/rusty1968/openprot.git?rev=289bde2041eb8534364803dd7406470bce5338de#289bde2041eb8534364803dd7406470bce5338de"
 dependencies = [
  "embedded-hal 1.0.0",
  "embedded-hal-nb",
