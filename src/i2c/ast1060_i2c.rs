@@ -19,6 +19,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "i2c_target")]
 use openprot_hal_blocking::i2c_hardware::slave::{I2cSEvent, I2cSlaveInterrupts};
 use openprot_hal_blocking::i2c_hardware::{I2cHardwareCore, I2cMaster};
+use openprot_hal_blocking::system_control::{ErrorType, SystemControl};
 use proposed_traits::i2c_target::I2CTarget;
 
 use embedded_hal::delay::DelayNs;
@@ -584,7 +585,41 @@ impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cHardwareCore for Ast1060I2c<'
             Err(Error::Proto)
         }
     }
+
+    fn init_with_system_control<F, S>(
+        &mut self,
+        config: &mut Self::Config,
+        _system_setup: F,
+    ) -> Result<(), Self::Error>
+    where
+        F: FnOnce(&mut S) -> Result<(), <S as ErrorType>::Error>,
+        S: SystemControl,
+        Self::Error: From<<S as ErrorType>::Error>,
+    {
+        // TODO: Implement system control integration
+        // For now, use the regular init method as a placeholder
+        self.init(config)
+    }
+
+    fn configure_timing_with_system_control<F, S>(
+        &mut self,
+        speed: Self::I2cSpeed,
+        timing: &Self::TimingConfig,
+        _system_config: F,
+    ) -> Result<u32, Self::Error>
+    where
+        F: FnOnce(&mut S) -> Result<u64, <S as ErrorType>::Error>,
+        S: SystemControl,
+        Self::Error: From<<S as ErrorType>::Error>,
+    {
+        // TODO: Implement system control integration
+        // For now, use the existing timing configuration
+        self.configure_timing(speed, timing)
+    }
 }
+
+// TODO: Helper methods for SystemControl integration will be implemented here
+// when full system control integration is added
 
 // I2cMaster implementation - master-specific operations
 impl<I2C: Instance, I2CT: I2CTarget, L: Logger> I2cMaster for Ast1060I2c<'_, I2C, I2CT, L> {

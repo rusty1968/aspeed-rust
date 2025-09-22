@@ -1,3 +1,5 @@
+// Licensed under the Apache-2.0 license
+
 //! OpenProt HAL slave trait implementations for AST1060 I2C controller.
 //!
 //! This module provides complete implementations of the OpenProt HAL blocking
