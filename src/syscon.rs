@@ -3,7 +3,9 @@
 use ast1060_pac::Scu;
 use core::time::Duration;
 use embedded_hal::delay::DelayNs;
-use proposed_traits::system_control::{ClockControl, ResetControl};
+use openprot_hal_blocking::system_control::{
+    ClockControl, Error as SystemControlError, ErrorKind, ErrorType, ResetControl,
+};
 
 const ASPEED_CLK_GRP_0_OFFSET: u8 = 0;
 const ASPEED_CLK_GRP_1_OFFSET: u8 = 32;
@@ -86,11 +88,12 @@ pub enum Error {
     InvalidClkSource,
 }
 
-use proposed_traits::system_control::ErrorKind;
-use syscon::Error::InvalidClkSource;
+pub struct SysCon<D: DelayNs> {
+    delay: D,
+    scu: Scu,
+}
 
-use crate::syscon;
-impl proposed_traits::system_control::Error for Error {
+impl SystemControlError for Error {
     fn kind(&self) -> ErrorKind {
         match *self {
             Self::ClockNotFound => ErrorKind::ClockNotFound,
@@ -100,18 +103,13 @@ impl proposed_traits::system_control::Error for Error {
             Self::ClockConfigurationFailed => ErrorKind::ClockConfigurationFailed,
             Self::InvalidResetId => ErrorKind::InvalidResetId,
             Self::HardwareFailure => ErrorKind::HardwareFailure,
-            Self::PermissionDenied | self::InvalidClkSource => ErrorKind::PermissionDenied,
+            Self::PermissionDenied | Self::InvalidClkSource => ErrorKind::PermissionDenied,
             Self::Timeout => ErrorKind::Timeout,
         }
     }
 }
 
-pub struct SysCon<D: DelayNs> {
-    delay: D,
-    scu: Scu,
-}
-
-impl<D: DelayNs> proposed_traits::system_control::ErrorType for SysCon<D> {
+impl<D: DelayNs> ErrorType for SysCon<D> {
     type Error = Error;
 }
 
