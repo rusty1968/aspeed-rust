@@ -71,3 +71,4 @@ pub mod common;
 pub mod i2c_controller;
 #[cfg(feature = "i2c_target")]
 pub mod openprot_slave_impl;
+pub mod system_setup;

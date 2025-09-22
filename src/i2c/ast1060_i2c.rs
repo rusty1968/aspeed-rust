@@ -210,6 +210,23 @@ impl embedded_hal::i2c::Error for Error {
     }
 }
 
+impl From<crate::syscon::Error> for Error {
+    fn from(err: crate::syscon::Error) -> Self {
+        match err {
+            crate::syscon::Error::ClockNotFound
+            | crate::syscon::Error::ClockAlreadyEnabled
+            | crate::syscon::Error::ClockAlreadyDisabled
+            | crate::syscon::Error::InvalidClockFrequency
+            | crate::syscon::Error::ClockConfigurationFailed
+            | crate::syscon::Error::InvalidResetId
+            | crate::syscon::Error::PermissionDenied
+            | crate::syscon::Error::InvalidClkSource => Self::Invalid,
+            crate::syscon::Error::HardwareFailure => Self::Bus,
+            crate::syscon::Error::Timeout => Self::Timeout,
+        }
+    }
+}
+
 const I2C_TOTAL: usize = 4;
 #[link_section = ".ram_nc"]
 static mut MDMA_BUFFER: [DmaBuffer<ASPEED_I2C_DMA_SIZE>; I2C_TOTAL] = [
