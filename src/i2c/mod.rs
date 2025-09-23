@@ -68,6 +68,7 @@
 
 pub mod ast1060_i2c;
 pub mod common;
+pub mod hardware_instantiation;
 pub mod i2c_controller;
 #[cfg(feature = "i2c_target")]
 pub mod openprot_slave_impl;
