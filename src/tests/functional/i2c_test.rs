@@ -2,11 +2,15 @@
 
 use crate::common::{DummyDelay, NoOpLogger, UartLogger};
 use crate::i2c::ast1060_i2c::Ast1060I2c;
-use crate::i2c::common::{I2cConfigBuilder, I2cSpeed, I2cXferMode};
+use crate::i2c::common::{I2cConfig, I2cConfigBuilder, I2cSpeed, I2cXferMode};
 use crate::i2c::i2c_controller::I2cController;
+use crate::syscon::{ClockId, ResetId, SysCon};
 
 use openprot_hal_blocking::i2c_hardware::I2cHardwareCore;
 use openprot_hal_blocking::i2c_hardware::I2cMaster;
+
+use openprot_hal_blocking::system_control::ErrorType as SystemControlErrorType;
+use openprot_hal_blocking::{ClockControl, ResetControl};
 
 use crate::pinctrl;
 use crate::uart::{self, Config, UartController};
@@ -308,4 +312,33 @@ pub fn test_i2c_slave(uart: &mut UartController<'_>) {
         I2C0_INSTANCE = Some(i2c0);
         NVIC::unmask(ast1060_pac::Interrupt::i2c);
     }
+}
+
+#[allow(dead_code)]
+fn test_i2c_configuration<H, D>(_syscon: &mut SysCon<D>, i2c_hardware: &mut H)
+where
+    H: I2cHardwareCore<Config = I2cConfig>,
+    <H as I2cHardwareCore>::Error: From<<SysCon<D> as SystemControlErrorType>::Error>,
+    D: embedded_hal::delay::DelayNs,
+{
+    let mut i2c_config: I2cConfig = I2cConfigBuilder::new()
+        .xfer_mode(I2cXferMode::DmaMode)
+        .multi_master(true)
+        .smbus_timeout(true)
+        .smbus_alert(false)
+        .speed(I2cSpeed::Standard)
+        .build();
+
+    let result =
+        i2c_hardware.init_with_system_control(&mut i2c_config, |system: &mut SysCon<D>| {
+            // Basic system control operations that return system control errors
+            system.reset_assert(&ResetId::RstI2C)?;
+            system.reset_deassert(&ResetId::RstI2C)?;
+            system.enable(&ClockId::ClkPCLK)?;
+            system.set_frequency(&ClockId::ClkPCLK, 48_000_000)?;
+
+            Ok(())
+        });
+
+    assert!(result.is_ok());
 }
