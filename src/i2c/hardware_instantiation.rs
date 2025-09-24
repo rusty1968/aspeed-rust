@@ -399,7 +399,7 @@ impl<'a> I2cControllerWrapper<'a> {
     /// }
     /// ```
     #[cfg(feature = "i2c_target")]
-    pub fn get_hardware_mut(&mut self) -> &mut dyn core::any::Any {
+    pub fn get_hardware_mut(&mut self) -> &mut (dyn core::any::Any + 'a) {
         match self {
             I2cControllerWrapper::I2c1(controller) => &mut controller.hardware,
             I2cControllerWrapper::I2c2(controller) => &mut controller.hardware,
