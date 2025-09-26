@@ -9,6 +9,7 @@ use crate::uart::{self, Config, UartController};
 use ast1060_pac::Peripherals;
 #[cfg(feature = "i2c_target")]
 use cortex_m::peripheral::NVIC;
+use embedded_hal::delay::DelayNs;
 use embedded_hal::i2c::ErrorKind;
 use embedded_io::Write;
 use proposed_traits::i2c_target::{
@@ -300,4 +301,101 @@ pub fn test_i2c_slave(uart: &mut UartController<'_>) {
         I2C0_INSTANCE = Some(i2c0);
         NVIC::unmask(ast1060_pac::Interrupt::i2c);
     }
+}
+
+/// Test the new `init_with_system_control` functionality
+pub fn test_i2c_init_with_system_control<D: DelayNs>(
+    uart: &mut UartController<'_>,
+    syscon: &mut crate::syscon::SysCon<D>,
+) {
+    use crate::common::DummyDelay;
+    use ast1060_pac::Peripherals;
+
+    writeln!(
+        uart,
+        "\r\n####### I2C init_with_system_control test #######\r\n"
+    )
+    .unwrap();
+
+    let peripherals = unsafe { Peripherals::steal() };
+    let mut delay = DummyDelay {};
+    let mut dbg_uart = UartController::new(peripherals.uart, &mut delay);
+
+    unsafe {
+        dbg_uart.init(&Config {
+            baud_rate: 115_200,
+            word_length: uart::WordLength::Eight as u8,
+            parity: uart::Parity::None,
+            stop_bits: uart::StopBits::One,
+            clock: 24_000_000,
+        });
+    }
+
+    let i2c_config = I2cConfigBuilder::new()
+        .xfer_mode(I2cXferMode::DmaMode)
+        .multi_master(true)
+        .smbus_timeout(true)
+        .smbus_alert(false)
+        .speed(I2cSpeed::Standard)
+        .build();
+
+    let mut i2c1: I2cController<
+        Ast1060I2c<ast1060_pac::I2c1, DummyI2CTarget, UartLogger>,
+        NoOpLogger,
+    > = I2cController {
+        hardware: Ast1060I2c::new(UartLogger::new(&mut dbg_uart)),
+        config: i2c_config,
+        logger: NoOpLogger {},
+    };
+
+    // Apply pin control for I2C1
+    pinctrl::Pinctrl::apply_pinctrl_group(pinctrl::PINCTRL_I2C1);
+
+    // Test the new init_with_system_control function
+    match i2c1
+        .hardware
+        .init_with_system_control(syscon, &mut i2c1.config)
+    {
+        Ok(()) => {
+            writeln!(uart, "✅ init_with_system_control succeeded\r").unwrap();
+
+            // Test basic I2C functionality after system control init
+            let addr = 0x2e; // ADT7490 device
+            let mut buf = [0x4e];
+
+            // Test write operation
+            match i2c1.hardware.write(addr, &buf) {
+                Ok(()) => {
+                    writeln!(uart, "✅ I2C write after syscon init: OK\r").unwrap();
+                }
+                Err(e) => {
+                    writeln!(uart, "⚠️  I2C write after syscon init failed: {e:?}\r").unwrap();
+                }
+            }
+
+            // Test read operation
+            match i2c1.hardware.read(addr, &mut buf) {
+                Ok(()) => {
+                    writeln!(
+                        uart,
+                        "✅ I2C read after syscon init: OK, data={:#x}\r",
+                        buf[0]
+                    )
+                    .unwrap();
+                }
+                Err(e) => {
+                    writeln!(uart, "⚠️  I2C read after syscon init failed: {e:?}\r").unwrap();
+                }
+            }
+        }
+        Err(e) => {
+            writeln!(uart, "❌ init_with_system_control failed: {e:?}\r").unwrap();
+        }
+    }
+
+    writeln!(
+        uart,
+        "####### I2C init_with_system_control test complete #######\r\n"
+    )
+    .unwrap();
 }

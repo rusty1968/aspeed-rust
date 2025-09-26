@@ -1,5 +1,4 @@
 // Licensed under the Apache-2.0 license
-
 use crate::common::{DmaBuffer, DummyDelay, Logger};
 #[cfg(feature = "i2c_target")]
 use crate::i2c::common::I2cSEvent;
@@ -10,6 +9,7 @@ use core::cmp::min;
 use core::fmt::Write;
 use core::marker::PhantomData;
 use core::ops::Drop;
+use core::result::Result;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embedded_hal::delay::DelayNs;
@@ -314,16 +314,11 @@ impl<I2C: Instance, I2CT: I2CTarget, L: Logger> HardwareInterface for Ast1060I2c
         system_control: &mut S,
         config: &mut I2cConfig,
     ) -> Result<(), Self::Error> {
-        use crate::syscon::ResetId;
+        // Handle system-level initialization
+        Self::init_i2c_global_system(system_control)?;
 
-        // Enable I2C clock and deassert reset
-        let reset_id = ResetId::RstI2C;
-        system_control
-            .reset_deassert(&reset_id)
-            .map_err(|_| Error::Bus)?;
-
-        // Initialize the I2C controller
-        self.init(config)
+        // Handle peripheral-level initialization (without SCU coupling)
+        self.init_peripheral_only(config)
     }
 
     fn init(&mut self, config: &mut I2cConfig) -> Result<(), Self::Error> {
@@ -1818,6 +1813,134 @@ impl<'a, I2C: Instance, I2CT: I2CTarget, L: Logger> Ast1060I2c<'a, I2C, I2CT, L>
         }
 
         // Fallthrough is success
+        Ok(())
+    }
+
+    /// Initialize the global I2C system using system control interface
+    fn init_i2c_global_system<
+        S: proposed_traits::system_control::ResetControl<ResetId = crate::syscon::ResetId>,
+    >(
+        system_control: &mut S,
+    ) -> Result<(), Error> {
+        use crate::syscon::ResetId;
+
+        if I2CGLOBAL_INIT
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            // Use system_control for reset operations instead of direct SCU access
+            let reset_id = ResetId::RstI2C;
+            system_control
+                .reset_assert(&reset_id)
+                .map_err(|_| Error::Bus)?;
+
+            let mut delay = DummyDelay {};
+            delay.delay_ns(1_000_000); // 1ms delay
+
+            system_control
+                .reset_deassert(&reset_id)
+                .map_err(|_| Error::Bus)?;
+            delay.delay_ns(1_000_000); // 1ms delay
+
+            // I2C global configuration (still needs I2cglobal access)
+            let i2cg = unsafe { &*I2cglobal::ptr() };
+            i2cg.i2cg0c().write(|w| {
+                w.clk_divider_mode_sel()
+                    .set_bit()
+                    .reg_definition_sel()
+                    .set_bit()
+                    .select_the_action_when_slave_pkt_mode_rxbuf_empty()
+                    .set_bit()
+            });
+            /*
+             * APB clk : 50Mhz
+             * div  : scl       : baseclk [APB/((div/2) + 1)] : tBuf [1/bclk * 16]
+             * I2CG10[31:24] base clk4 for i2c auto recovery timeout counter (0x62)
+             * I2CG10[23:16] base clk3 for Standard-mode (100Khz) min tBuf 4.7us
+             * 0x1d : 100.8Khz  : 3.225Mhz                    : 4.96us
+             * 0x1e : 97.66Khz  : 3.125Mhz                    : 5.12us
+             * 0x1f : 97.85Khz  : 3.03Mhz                     : 5.28us
+             * 0x20 : 98.04Khz  : 2.94Mhz                     : 5.44us
+             * 0x21 : 98.61Khz  : 2.857Mhz                    : 5.6us
+             * 0x22 : 99.21Khz  : 2.77Mhz                     : 5.76us (default)
+             * I2CG10[15:8] base clk2 for Fast-mode (400Khz) min tBuf 1.3us
+             * 0x08 : 400Khz    : 10Mhz                       : 1.6us
+             * I2CG10[7:0] base clk1 for Fast-mode Plus (1Mhz) min tBuf 0.5us
+             * 0x03 : 1Mhz      : 20Mhz                       : 0.8us
+             */
+            i2cg.i2cg10().write(|w| unsafe { w.bits(0x6222_0803) });
+        }
+        Ok(())
+    }
+
+    /// Initialize only the peripheral-level I2C controller (no SCU coupling)
+    #[allow(clippy::unnecessary_wraps)]
+    fn init_peripheral_only(&mut self, config: &mut I2cConfig) -> Result<(), Error> {
+        i2c_debug!(self.logger, "i2c peripheral init");
+        i2c_debug!(
+            self.logger,
+            "mdma_buf {:p}, sdma_buf {:p}",
+            self.mdma_buf.as_ptr(),
+            self.sdma_buf.as_ptr()
+        );
+
+        // Store configuration
+        self.xfer_mode = config.xfer_mode;
+        self.multi_master = config.multi_master;
+        self.smbus_alert = config.smbus_alert;
+
+        // I2C peripheral reset and configuration (no SCU dependency)
+        self.i2c.i2cc00().write(|w| unsafe { w.bits(0) });
+        if !self.multi_master {
+            self.i2c
+                .i2cc00()
+                .write(|w| w.dis_multimaster_capability_for_master_fn_only().set_bit());
+        }
+        self.i2c.i2cc00().write(|w| {
+            w.enbl_bus_autorelease_when_scllow_sdalow_or_slave_mode_inactive_timeout()
+                .set_bit()
+                .enbl_master_fn()
+                .set_bit()
+        });
+
+        // set AC timing
+        self.configure_timing(config);
+        // clear interrupts
+        self.i2c.i2cm14().write(|w| unsafe { w.bits(0xffff_ffff) });
+        // set interrupt
+        self.i2c.i2cm10().write(|w| {
+            w.enbl_pkt_cmd_done_int()
+                .set_bit()
+                .enbl_bus_recover_done_int()
+                .set_bit()
+        });
+        i2c_debug!(
+            self.logger,
+            "i2c init after set interrupt: {:#x}",
+            self.i2c.i2cm14().read().bits()
+        );
+        if self.smbus_alert {
+            self.i2c
+                .i2cm10()
+                .write(|w| w.enbl_smbus_dev_alert_int().set_bit());
+        }
+
+        if cfg!(feature = "i2c_target") {
+            i2c_debug!(self.logger, "i2c target enabled");
+            // clear slave interrupts
+            self.i2c.i2cs24().write(|w| unsafe { w.bits(0xffff_ffff) });
+            if self.xfer_mode == I2cXferMode::ByteMode {
+                self.i2c.i2cs20().write(|w| unsafe { w.bits(0xffff) });
+            } else {
+                self.i2c.i2cs20().write(|w| {
+                    w.enbl_slave_mode_inactive_timeout_int()
+                        .set_bit()
+                        .enbl_pkt_cmd_done_int()
+                        .set_bit()
+                });
+            }
+        }
+
         Ok(())
     }
 }
