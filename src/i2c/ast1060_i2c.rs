@@ -9,6 +9,7 @@ use ast1060_pac::{I2cglobal, Scu};
 use core::cmp::min;
 use core::fmt::Write;
 use core::marker::PhantomData;
+use core::ops::Drop;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embedded_hal::delay::DelayNs;
@@ -305,7 +306,27 @@ macro_rules! i2c_error {
 impl<I2C: Instance, I2CT: I2CTarget, L: Logger> HardwareInterface for Ast1060I2c<'_, I2C, I2CT, L> {
     type Error = Error;
 
-    fn init(&mut self, config: &mut I2cConfig) {
+    fn init_with_system_control<
+        S: proposed_traits::system_control::ResetControl<ResetId = crate::syscon::ResetId>
+            + proposed_traits::system_control::ClockControl,
+    >(
+        &mut self,
+        system_control: &mut S,
+        config: &mut I2cConfig,
+    ) -> Result<(), Self::Error> {
+        use crate::syscon::ResetId;
+
+        // Enable I2C clock and deassert reset
+        let reset_id = ResetId::RstI2C;
+        system_control
+            .reset_deassert(&reset_id)
+            .map_err(|_| Error::Bus)?;
+
+        // Initialize the I2C controller
+        self.init(config)
+    }
+
+    fn init(&mut self, config: &mut I2cConfig) -> Result<(), Self::Error> {
         i2c_debug!(self.logger, "i2c init");
         i2c_debug!(
             self.logger,
@@ -408,6 +429,8 @@ impl<I2C: Instance, I2CT: I2CTarget, L: Logger> HardwareInterface for Ast1060I2c
                 });
             }
         }
+
+        Ok(())
     }
     #[allow(clippy::too_many_lines)]
     fn configure_timing(&mut self, config: &mut I2cConfig) {
