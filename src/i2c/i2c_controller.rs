@@ -2,13 +2,24 @@
 
 use crate::common::{Logger, NoOpLogger};
 use crate::i2c::common::I2cConfig;
+use core::result::Result;
 use embedded_hal::i2c::{Operation, SevenBitAddress};
+use proposed_traits::system_control::{ClockControl, ResetControl};
 
 pub trait HardwareInterface {
     type Error: embedded_hal::i2c::Error + core::fmt::Debug;
 
+    fn init_with_system_control<
+        S: ResetControl<ResetId = crate::syscon::ResetId>
+            + ClockControl<ClockId = crate::syscon::ClockId>,
+    >(
+        &mut self,
+        system_control: &mut S,
+        config: &mut I2cConfig,
+    ) -> Result<(), Self::Error>;
+
     // Methods return hardware-specific errors
-    fn init(&mut self, config: &mut I2cConfig);
+    fn init(&mut self, config: &mut I2cConfig) -> Result<(), Self::Error>;
     fn configure_timing(&mut self, config: &mut I2cConfig);
     fn enable_interrupts(&mut self, mask: u32);
     fn clear_interrupts(&mut self, mask: u32);

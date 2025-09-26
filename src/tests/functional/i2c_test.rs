@@ -122,7 +122,7 @@ pub fn test_i2c_master(uart: &mut UartController<'_>) {
     };
 
     pinctrl::Pinctrl::apply_pinctrl_group(pinctrl::PINCTRL_I2C1);
-    i2c1.hardware.init(&mut i2c1.config);
+    let _ = i2c1.hardware.init(&mut i2c1.config);
 
     let addr = 0x2e; //device ADT7490
     let mut buf = [0x4e];
