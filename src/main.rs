@@ -27,7 +27,7 @@ use aspeed_ddk::tests::functional::timer_test::run_timer_tests;
 use panic_halt as _;
 
 // Import owned API traits and types
-use aspeed_ddk::hash_owned::{Sha2_256, Sha2_384, Sha2_512};
+use aspeed_ddk::digest::hash_owned::{Sha2_256, Sha2_384, Sha2_512};
 use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 
 use proposed_traits::system_control::ResetControl;

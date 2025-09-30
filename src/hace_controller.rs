@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use crate::digest::traits::HaceContextProvider;
 use ast1060_pac::Hace;
 use core::convert::{AsRef, Infallible};
 use core::default::Default;
@@ -346,11 +347,13 @@ impl MacErrorType for HaceController {
     type Error = Infallible;
 }
 
-impl HaceController {
-    pub fn ctx_mut(&mut self) -> &mut AspeedHashContext {
+impl HaceContextProvider for HaceController {
+    fn ctx_mut(&mut self) -> &mut AspeedHashContext {
         unsafe { &mut *Self::shared_ctx() }
     }
+}
 
+impl HaceController {
     pub fn start_hash_operation(&mut self, len: u32) {
         let ctx = self.ctx_mut();
 

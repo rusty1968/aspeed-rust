@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use crate::digest::traits::HaceContextProvider;
 use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_EN};
 use proposed_traits::mac::{Error, ErrorKind, ErrorType, MacAlgorithm, MacInit, MacOp};
 

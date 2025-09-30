@@ -14,6 +14,7 @@
 //! and can be stored in structs, moved across functions, and persist across IPC.
 //!
 
+use crate::digest::traits::HaceContextProvider;
 use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
 use core::convert::Infallible;
 use core::marker::PhantomData;
@@ -21,7 +22,7 @@ use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 use openprot_hal_blocking::digest::{DigestAlgorithm, ErrorType};
 
 // Re-export digest algorithm types from existing hash module
-pub use crate::hash::{Digest48, Digest64, Sha1, Sha224, Sha256, Sha384, Sha512};
+pub use crate::digest::hash::{Digest48, Digest64, Sha1, Sha224, Sha256, Sha384, Sha512};
 
 // Also re-export OpenProt digest types for convenience
 pub use openprot_hal_blocking::digest::{Digest, Sha2_256, Sha2_384, Sha2_512};

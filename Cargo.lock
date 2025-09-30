@@ -76,6 +76,7 @@ dependencies = [
  "panic-halt",
  "paste",
  "proposed-traits",
+ "rand_core",
  "zerocopy",
 ]
 

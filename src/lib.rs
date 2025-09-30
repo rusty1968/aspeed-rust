@@ -3,12 +3,10 @@
 #![cfg_attr(not(test), no_std)]
 pub mod astdebug;
 pub mod common;
+pub mod digest;
 pub mod ecdsa;
 pub mod gpio;
 pub mod hace_controller;
-pub mod hash;
-pub mod hash_owned;
-pub mod hmac;
 pub mod i2c;
 pub mod pinctrl;
 pub mod rsa;

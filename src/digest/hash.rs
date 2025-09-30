@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use crate::digest::traits::HaceContextProvider;
 use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
 use proposed_traits::digest::{DigestAlgorithm, DigestInit, DigestOp, Error, ErrorKind, ErrorType};
 
