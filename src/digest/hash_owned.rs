@@ -14,7 +14,6 @@
 //! and can be stored in structs, moved across functions, and persist across IPC.
 //!
 
-use crate::digest::traits::HaceContextProvider;
 use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
 use core::convert::Infallible;
 use core::marker::PhantomData;
@@ -80,11 +79,12 @@ macro_rules! impl_owned_digest {
             fn init(mut self, _init_params: $algo) -> Result<Self::Context, Self::Error> {
                 // Set up the algorithm and initialize the context
                 self.algo = <$algo as IntoHashAlgo>::to_hash_algo();
-                self.ctx_mut().method = self.algo.hash_cmd();
+                self.ctx_mut_unchecked().method = self.algo.hash_cmd();
                 self.copy_iv_to_digest();
-                self.ctx_mut().block_size = u32::try_from(self.algo.block_size()).unwrap();
-                self.ctx_mut().bufcnt = 0;
-                self.ctx_mut().digcnt = [0; 2];
+                self.ctx_mut_unchecked().block_size =
+                    u32::try_from(self.algo.block_size()).unwrap();
+                self.ctx_mut_unchecked().bufcnt = 0;
+                self.ctx_mut_unchecked().digcnt = [0; 2];
 
                 Ok(OwnedDigestContext {
                     controller: self,
@@ -101,61 +101,64 @@ macro_rules! impl_owned_digest {
                 let input_len = u32::try_from(data.len()).unwrap_or(u32::MAX);
 
                 // Update digest count
-                let (new_len, carry) =
-                    self.controller.ctx_mut().digcnt[0].overflowing_add(u64::from(input_len));
+                let (new_len, carry) = self.controller.ctx_mut_unchecked().digcnt[0]
+                    .overflowing_add(u64::from(input_len));
 
-                self.controller.ctx_mut().digcnt[0] = new_len;
+                self.controller.ctx_mut_unchecked().digcnt[0] = new_len;
                 if carry {
-                    self.controller.ctx_mut().digcnt[1] += 1;
+                    self.controller.ctx_mut_unchecked().digcnt[1] += 1;
                 }
 
-                let start = self.controller.ctx_mut().bufcnt as usize;
+                let start = self.controller.ctx_mut_unchecked().bufcnt as usize;
                 let end = start + input_len as usize;
 
                 // If we can fit everything in the buffer, just copy it
-                if self.controller.ctx_mut().bufcnt + input_len
-                    < self.controller.ctx_mut().block_size
+                if self.controller.ctx_mut_unchecked().bufcnt + input_len
+                    < self.controller.ctx_mut_unchecked().block_size
                 {
-                    self.controller.ctx_mut().buffer[start..end].copy_from_slice(data);
-                    self.controller.ctx_mut().bufcnt += input_len;
+                    self.controller.ctx_mut_unchecked().buffer[start..end].copy_from_slice(data);
+                    self.controller.ctx_mut_unchecked().bufcnt += input_len;
                     return Ok(self);
                 }
 
                 // Process data in blocks using scatter-gather
-                let remaining = (input_len + self.controller.ctx_mut().bufcnt)
-                    % self.controller.ctx_mut().block_size;
-                let total_len = (input_len + self.controller.ctx_mut().bufcnt) - remaining;
+                let remaining = (input_len + self.controller.ctx_mut_unchecked().bufcnt)
+                    % self.controller.ctx_mut_unchecked().block_size;
+                let total_len =
+                    (input_len + self.controller.ctx_mut_unchecked().bufcnt) - remaining;
                 let mut i = 0;
 
-                if self.controller.ctx_mut().bufcnt != 0 {
-                    self.controller.ctx_mut().sg[0].addr =
-                        self.controller.ctx_mut().buffer.as_ptr() as u32;
-                    self.controller.ctx_mut().sg[0].len = self.controller.ctx_mut().bufcnt;
-                    if total_len == self.controller.ctx_mut().bufcnt {
-                        self.controller.ctx_mut().sg[0].addr = data.as_ptr() as u32;
-                        self.controller.ctx_mut().sg[0].len |= HACE_SG_LAST;
+                if self.controller.ctx_mut_unchecked().bufcnt != 0 {
+                    self.controller.ctx_mut_unchecked().sg[0].addr =
+                        self.controller.ctx_mut_unchecked().buffer.as_ptr() as u32;
+                    self.controller.ctx_mut_unchecked().sg[0].len =
+                        self.controller.ctx_mut_unchecked().bufcnt;
+                    if total_len == self.controller.ctx_mut_unchecked().bufcnt {
+                        self.controller.ctx_mut_unchecked().sg[0].addr = data.as_ptr() as u32;
+                        self.controller.ctx_mut_unchecked().sg[0].len |= HACE_SG_LAST;
                     }
                     i += 1;
                 }
 
-                if total_len != self.controller.ctx_mut().bufcnt {
-                    self.controller.ctx_mut().sg[i].addr = data.as_ptr() as u32;
-                    self.controller.ctx_mut().sg[i].len =
-                        (total_len - self.controller.ctx_mut().bufcnt) | HACE_SG_LAST;
+                if total_len != self.controller.ctx_mut_unchecked().bufcnt {
+                    self.controller.ctx_mut_unchecked().sg[i].addr = data.as_ptr() as u32;
+                    self.controller.ctx_mut_unchecked().sg[i].len =
+                        (total_len - self.controller.ctx_mut_unchecked().bufcnt) | HACE_SG_LAST;
                 }
 
                 self.controller.start_hash_operation(total_len);
 
                 // Handle remaining data
                 if remaining != 0 {
-                    let src_start = (total_len - self.controller.ctx_mut().bufcnt) as usize;
+                    let src_start =
+                        (total_len - self.controller.ctx_mut_unchecked().bufcnt) as usize;
                     let src_end = src_start + remaining as usize;
 
-                    self.controller.ctx_mut().buffer[..(remaining as usize)]
+                    self.controller.ctx_mut_unchecked().buffer[..(remaining as usize)]
                         .copy_from_slice(&data[src_start..src_end]);
-                    self.controller.ctx_mut().bufcnt = remaining;
+                    self.controller.ctx_mut_unchecked().bufcnt = remaining;
                 } else {
-                    self.controller.ctx_mut().bufcnt = 0;
+                    self.controller.ctx_mut_unchecked().bufcnt = 0;
                 }
 
                 Ok(self)
@@ -170,7 +173,7 @@ macro_rules! impl_owned_digest {
                 let digest_len = self.controller.algo.digest_size();
 
                 let (digest_ptr, bufcnt) = {
-                    let ctx = self.controller.ctx_mut();
+                    let ctx = self.controller.ctx_mut_unchecked();
 
                     ctx.sg[0].addr = ctx.buffer.as_ptr() as u32;
                     ctx.sg[0].len = ctx.bufcnt | HACE_SG_LAST;

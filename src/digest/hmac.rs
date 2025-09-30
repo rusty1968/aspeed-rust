@@ -1,6 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-use crate::digest::traits::HaceContextProvider;
 use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_EN};
 use proposed_traits::mac::{Error, ErrorKind, ErrorType, MacAlgorithm, MacInit, MacOp};
 
@@ -139,30 +138,30 @@ where
 
     fn init<'a>(&'a mut self, _algo: A, key: &A::Key) -> Result<Self::OpContext<'a>, Self::Error> {
         self.algo = A::to_hash_algo();
-        self.ctx_mut().method = self.algo.hash_cmd();
+        self.ctx_mut_unchecked().method = self.algo.hash_cmd();
         self.copy_iv_to_digest();
-        self.ctx_mut().block_size = u32::try_from(self.algo.block_size()).unwrap();
-        self.ctx_mut().bufcnt = 0;
-        self.ctx_mut().digcnt = [0; 2];
-        self.ctx_mut().buffer.fill(0);
-        self.ctx_mut().digest.fill(0);
-        self.ctx_mut().ipad.fill(0);
-        self.ctx_mut().opad.fill(0);
-        self.ctx_mut().key.fill(0);
+        self.ctx_mut_unchecked().block_size = u32::try_from(self.algo.block_size()).unwrap();
+        self.ctx_mut_unchecked().bufcnt = 0;
+        self.ctx_mut_unchecked().digcnt = [0; 2];
+        self.ctx_mut_unchecked().buffer.fill(0);
+        self.ctx_mut_unchecked().digest.fill(0);
+        self.ctx_mut_unchecked().ipad.fill(0);
+        self.ctx_mut_unchecked().opad.fill(0);
+        self.ctx_mut_unchecked().key.fill(0);
 
-        if key.as_ref().len() > self.ctx_mut().key.len() {
+        if key.as_ref().len() > self.ctx_mut_unchecked().key.len() {
             // hash key if it is too long
             self.hash_key(key);
         } else {
-            self.ctx_mut().key[..key.as_ref().len()].copy_from_slice(key.as_ref());
-            self.ctx_mut().ipad[..key.as_ref().len()].copy_from_slice(key.as_ref());
-            self.ctx_mut().opad[..key.as_ref().len()].copy_from_slice(key.as_ref());
-            self.ctx_mut().key_len = u32::try_from(key.as_ref().len()).unwrap();
+            self.ctx_mut_unchecked().key[..key.as_ref().len()].copy_from_slice(key.as_ref());
+            self.ctx_mut_unchecked().ipad[..key.as_ref().len()].copy_from_slice(key.as_ref());
+            self.ctx_mut_unchecked().opad[..key.as_ref().len()].copy_from_slice(key.as_ref());
+            self.ctx_mut_unchecked().key_len = u32::try_from(key.as_ref().len()).unwrap();
         }
 
-        for i in 0..self.ctx_mut().block_size as usize {
-            self.ctx_mut().ipad[i] ^= 0x36;
-            self.ctx_mut().opad[i] ^= 0x5c;
+        for i in 0..self.ctx_mut_unchecked().block_size as usize {
+            self.ctx_mut_unchecked().ipad[i] ^= 0x36;
+            self.ctx_mut_unchecked().opad[i] ^= 0x5c;
         }
 
         Ok(OpContextImpl {
@@ -214,7 +213,7 @@ where
         let mut bufcnt: u32;
 
         {
-            let ctx = ctrl.ctx_mut();
+            let ctx = ctrl.ctx_mut_unchecked();
             ctx.digcnt[0] = block_size as u64;
             ctx.bufcnt =
                 u32::try_from(block_size).map_err(|_| MacError(ErrorKind::InvalidInputLength))?;
@@ -230,15 +229,16 @@ where
         }
 
         ctrl.fill_padding(0);
-        bufcnt = ctrl.ctx_mut().bufcnt;
+        bufcnt = ctrl.ctx_mut_unchecked().bufcnt;
         ctrl.copy_iv_to_digest();
         ctrl.start_hash_operation(bufcnt);
-        let slice =
-            unsafe { core::slice::from_raw_parts(ctrl.ctx_mut().digest.as_ptr(), digest_size) };
+        let slice = unsafe {
+            core::slice::from_raw_parts(ctrl.ctx_mut_unchecked().digest.as_ptr(), digest_size)
+        };
 
         // H(opad + H(opad + hash sum))
         {
-            let ctx = ctrl.ctx_mut();
+            let ctx = ctrl.ctx_mut_unchecked();
             ctx.digcnt[0] = block_size as u64 + digest_size as u64;
             ctx.bufcnt = u32::try_from(block_size + digest_size)
                 .map_err(|_| MacError(ErrorKind::UpdateError))?;
@@ -246,7 +246,7 @@ where
             ctx.buffer[block_size..(block_size + digest_size)].copy_from_slice(slice);
         }
         ctrl.fill_padding(0);
-        bufcnt = ctrl.ctx_mut().bufcnt;
+        bufcnt = ctrl.ctx_mut_unchecked().bufcnt;
         ctrl.copy_iv_to_digest();
         ctrl.start_hash_operation(bufcnt);
 
@@ -255,7 +255,7 @@ where
 
     fn finalize(self) -> Result<Self::Output, Self::Error> {
         let digest_size = self.controller.algo.digest_size();
-        let ctx = self.controller.ctx_mut();
+        let ctx = self.controller.ctx_mut_unchecked();
 
         let slice = unsafe { core::slice::from_raw_parts(ctx.digest.as_ptr(), digest_size) };
 

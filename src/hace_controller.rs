@@ -137,7 +137,7 @@ pub trait ContextCleanup {
 
 impl ContextCleanup for crate::hace_controller::HaceController {
     fn cleanup_context(&mut self) {
-        let ctx = self.ctx_mut();
+        let ctx = self.ctx_mut_unchecked();
         ctx.bufcnt = 0;
         ctx.buffer.fill(0);
         ctx.digest.fill(0);
@@ -348,14 +348,28 @@ impl MacErrorType for HaceController {
 }
 
 impl HaceContextProvider for HaceController {
-    fn ctx_mut(&mut self) -> &mut AspeedHashContext {
-        unsafe { &mut *Self::shared_ctx() }
+    fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, crate::digest::traits::ContextError> {
+        // SAFETY: Single-threaded execution, no HACE interrupts enabled,
+        // &mut self ensures exclusive access to HaceController
+        // This never fails for single-context provider
+        Ok(unsafe { &mut *Self::shared_ctx() })
     }
 }
 
 impl HaceController {
+    /// Internal helper for infallible context access.
+    /// Only use this within `HaceController` methods where we know it cannot fail.
+    #[inline]
+    pub(crate) fn ctx_mut_unchecked(&mut self) -> &mut AspeedHashContext {
+        // SAFETY: HaceController always uses shared context which never fails
+        match self.ctx_mut() {
+            Ok(ctx) => ctx,
+            Err(_) => unreachable!("HaceController::ctx_mut() never fails"),
+        }
+    }
+
     pub fn start_hash_operation(&mut self, len: u32) {
-        let ctx = self.ctx_mut();
+        let ctx = self.ctx_mut_unchecked();
 
         let src_addr = if (ctx.method & HACE_SG_EN) != 0 {
             ctx.sg.as_ptr() as u32
@@ -386,7 +400,7 @@ impl HaceController {
         let iv_bytes =
             unsafe { core::slice::from_raw_parts(iv.as_ptr().cast::<u8>(), iv.len() * 4) };
 
-        self.ctx_mut().digest[..iv_bytes.len()].copy_from_slice(iv_bytes);
+        self.ctx_mut_unchecked().digest[..iv_bytes.len()].copy_from_slice(iv_bytes);
     }
 
     pub fn hash_key(&mut self, key: &impl AsRef<[u8]>) {
@@ -397,25 +411,26 @@ impl HaceController {
         // SAFETY: key_len is bounded by the key buffer size (128 bytes) which fits in u32
         debug_assert!(u32::try_from(key_len).is_ok(), "key_len exceeds u32::MAX");
 
-        self.ctx_mut().digcnt[0] = key_len as u64;
-        self.ctx_mut().bufcnt = u32::try_from(key_len).unwrap_or_else(|_| {
+        self.ctx_mut_unchecked().digcnt[0] = key_len as u64;
+        self.ctx_mut_unchecked().bufcnt = u32::try_from(key_len).unwrap_or_else(|_| {
             // This should never happen given buffer constraints, but provide safe fallback
             debug_assert!(false, "key_len conversion to u32 failed");
             u32::MAX
         });
-        self.ctx_mut().buffer[..key_len].copy_from_slice(key_bytes);
-        self.ctx_mut().method &= !HACE_SG_EN; // Disable SG mode for key hashing
+        self.ctx_mut_unchecked().buffer[..key_len].copy_from_slice(key_bytes);
+        self.ctx_mut_unchecked().method &= !HACE_SG_EN; // Disable SG mode for key hashing
         self.copy_iv_to_digest();
         self.fill_padding(0);
-        let bufcnt = self.ctx_mut().bufcnt;
+        let bufcnt = self.ctx_mut_unchecked().bufcnt;
         self.start_hash_operation(bufcnt);
 
-        let slice =
-            unsafe { core::slice::from_raw_parts(self.ctx_mut().digest.as_ptr(), digest_len) };
+        let slice = unsafe {
+            core::slice::from_raw_parts(self.ctx_mut_unchecked().digest.as_ptr(), digest_len)
+        };
 
-        self.ctx_mut().key[..digest_len].copy_from_slice(slice);
-        self.ctx_mut().ipad[..digest_len].copy_from_slice(slice);
-        self.ctx_mut().opad[..digest_len].copy_from_slice(slice);
+        self.ctx_mut_unchecked().key[..digest_len].copy_from_slice(slice);
+        self.ctx_mut_unchecked().ipad[..digest_len].copy_from_slice(slice);
+        self.ctx_mut_unchecked().opad[..digest_len].copy_from_slice(slice);
 
         // SAFETY: digest_len is bounded by the digest buffer size (64 bytes) which fits in u32
         debug_assert!(
@@ -423,7 +438,7 @@ impl HaceController {
             "digest_len exceeds u32::MAX"
         );
 
-        self.ctx_mut().key_len = u32::try_from(digest_len).unwrap_or_else(|_| {
+        self.ctx_mut_unchecked().key_len = u32::try_from(digest_len).unwrap_or_else(|_| {
             // This should never happen given buffer constraints, but provide safe fallback
             debug_assert!(false, "digest_len conversion to u32 failed");
             u32::MAX
@@ -431,7 +446,7 @@ impl HaceController {
     }
 
     pub fn fill_padding(&mut self, remaining: usize) {
-        let ctx = self.ctx_mut();
+        let ctx = self.ctx_mut_unchecked();
         let block_size = ctx.block_size as usize;
         let bufcnt = ctx.bufcnt as usize;
 
