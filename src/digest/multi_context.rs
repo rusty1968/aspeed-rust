@@ -39,7 +39,7 @@
 //! ```
 
 use crate::digest::traits::HaceContextProvider;
-use crate::hace_controller::{AspeedHashContext, HaceController};
+use crate::hace_controller::AspeedHashContext;
 use core::mem::MaybeUninit;
 
 /// Error type for session allocation operations
@@ -201,7 +201,7 @@ impl MultiContextProvider {
 
         // SAFETY: Single-threaded execution, no HACE interrupts enabled,
         // &mut self ensures exclusive access
-        let hw_ctx = unsafe { &*HaceController::shared_ctx() };
+        let hw_ctx = unsafe { &*crate::hace_controller::shared_hash_ctx() };
 
         // Copy all critical state from hardware context to storage
         saved.digest.copy_from_slice(&hw_ctx.digest);
@@ -255,7 +255,7 @@ impl MultiContextProvider {
 
         // SAFETY: Single-threaded execution, no HACE interrupts enabled,
         // &mut self ensures exclusive access
-        let hw_ctx = unsafe { &mut *HaceController::shared_ctx() };
+        let hw_ctx = unsafe { &mut *crate::hace_controller::shared_hash_ctx() };
 
         // Copy all critical state from storage to hardware context
         hw_ctx.digest.copy_from_slice(&saved.digest);
@@ -299,6 +299,6 @@ impl HaceContextProvider for MultiContextProvider {
 
         // SAFETY: Single-threaded execution, no HACE interrupts enabled,
         // &mut self ensures exclusive access to MultiContextProvider
-        Ok(unsafe { &mut *HaceController::shared_ctx() })
+        Ok(unsafe { &mut *crate::hace_controller::shared_hash_ctx() })
     }
 }

@@ -17,6 +17,7 @@ edition = "2021"
 [features]
 default = []
 std = []
+multi-context = []  # Enable multi-context hash provider for concurrent sessions
 i2c_target = []
 test-rsa = []
 test-ecdsa = []

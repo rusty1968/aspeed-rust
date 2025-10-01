@@ -21,3 +21,20 @@ pub trait HaceContextProvider {
     /// Returns `ContextError` if context access fails
     fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, ContextError>;
 }
+
+/// Single-context provider that uses the global shared context (zero overhead)
+///
+/// This is the default provider for `HaceController` and provides the same
+/// behavior as the original non-generic implementation.
+pub struct SingleContextProvider;
+
+impl HaceContextProvider for SingleContextProvider {
+    fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, ContextError> {
+        // SAFETY: Single-threaded execution, no HACE interrupts enabled
+        Ok(unsafe { &mut *crate::hace_controller::shared_hash_ctx() })
+    }
+}
+
+// Re-export MultiContextProvider when the feature is enabled
+#[cfg(feature = "multi-context")]
+pub use crate::digest::multi_context::MultiContextProvider;

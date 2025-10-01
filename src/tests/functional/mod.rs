@@ -5,6 +5,7 @@ pub mod gpio_test;
 pub mod hash_test;
 pub mod hmac_test;
 pub mod i2c_test;
+#[cfg(feature = "multi-context")]
 pub mod multi_context_test;
 pub mod rsa_test;
 pub mod rsa_test_vec;

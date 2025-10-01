@@ -119,13 +119,14 @@ impl IntoHashAlgo for Sha512 {
     }
 }
 
-impl<A> DigestInit<A> for HaceController
+impl<A, P> DigestInit<A> for HaceController<P>
 where
     A: DigestAlgorithm + IntoHashAlgo,
     A::DigestOutput: Default + AsMut<[u8]>,
+    P: crate::digest::traits::HaceContextProvider,
 {
     type OpContext<'a>
-        = OpContextImpl<'a, A>
+        = OpContextImpl<'a, A, P>
     where
         Self: 'a; // Define your OpContext type here
 
@@ -144,8 +145,8 @@ where
     }
 }
 
-pub struct OpContextImpl<'a, A: DigestAlgorithm + IntoHashAlgo> {
-    pub controller: &'a mut HaceController,
+pub struct OpContextImpl<'a, A: DigestAlgorithm + IntoHashAlgo, P: crate::digest::traits::HaceContextProvider> {
+    pub controller: &'a mut HaceController<P>,
     _phantom: core::marker::PhantomData<A>,
 }
 
@@ -164,17 +165,19 @@ impl From<ErrorKind> for HashError {
     }
 }
 
-impl<A> ErrorType for OpContextImpl<'_, A>
+impl<A, P> ErrorType for OpContextImpl<'_, A, P>
 where
     A: DigestAlgorithm + IntoHashAlgo,
+    P: crate::digest::traits::HaceContextProvider,
 {
     type Error = HashError;
 }
 
-impl<A> DigestOp for OpContextImpl<'_, A>
+impl<A, P> DigestOp for OpContextImpl<'_, A, P>
 where
     A: DigestAlgorithm + IntoHashAlgo,
     A::DigestOutput: Default + AsMut<[u8]>,
+    P: crate::digest::traits::HaceContextProvider,
 {
     type Output = A::DigestOutput;
 
