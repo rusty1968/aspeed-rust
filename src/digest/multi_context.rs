@@ -19,7 +19,7 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use aspeed_ddk::hace_controller::HaceController;
+//! use aspeed_ddk::digest::hace_controller::HaceController;
 //! use aspeed_ddk::digest::multi_context::MultiContextProvider;
 //!
 //! // Create controller with multi-context support
@@ -38,8 +38,8 @@
 //! // ... perform hash operations ...
 //! ```
 
-use crate::digest::traits::HaceContextProvider;
-use crate::hace_controller::AspeedHashContext;
+use super::hace_controller::AspeedHashContext;
+use super::traits::HaceContextProvider;
 use core::mem::MaybeUninit;
 
 /// Error type for session allocation operations

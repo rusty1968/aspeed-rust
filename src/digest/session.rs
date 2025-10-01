@@ -18,7 +18,7 @@
 //! ```no_run
 //! use aspeed_ddk::digest::session::SessionManager;
 //!
-//! # fn example(hace: aspeed_ddk::hace_controller::Hace) -> Result<(), aspeed_ddk::digest::session::SessionError> {
+//! # fn example(hace: ast1060_pac::Hace) -> Result<(), aspeed_ddk::digest::session::SessionError> {
 //! // Create manager supporting 8 concurrent sessions
 //! let mut manager = SessionManager::<8>::new(hace)?;
 //!
@@ -35,9 +35,9 @@
 //! # }
 //! ```
 
-use crate::digest::hash_owned::{IntoHashAlgo, OwnedDigestContext, Sha2_256, Sha2_384, Sha2_512};
-use crate::digest::multi_context::MultiContextProvider;
-use crate::hace_controller::HaceController;
+use super::hace_controller::HaceController;
+use super::hash_owned::{IntoHashAlgo, OwnedDigestContext, Sha2_256, Sha2_384, Sha2_512};
+use super::multi_context::MultiContextProvider;
 use ast1060_pac::Hace;
 use core::marker::PhantomData;
 use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
@@ -119,7 +119,7 @@ impl Default for SessionSlot {
 /// ```no_run
 /// use aspeed_ddk::digest::session::SessionManager;
 ///
-/// # fn example(hace: aspeed_ddk::hace_controller::Hace) -> Result<(), aspeed_ddk::digest::session::SessionError> {
+/// # fn example(hace: ast1060_pac::Hace) -> Result<(), aspeed_ddk::digest::session::SessionError> {
 /// let mut manager = SessionManager::<4>::new(hace)?;
 ///
 /// // Start multiple sessions
@@ -216,8 +216,8 @@ where
             .set_active_session(self.provider_session_id);
 
         // Perform update using DigestOp trait
-        self.context = DigestOp::update(self.context, data)
-            .map_err(|_| SessionError::UpdateFailed)?;
+        self.context =
+            DigestOp::update(self.context, data).map_err(|_| SessionError::UpdateFailed)?;
 
         Ok(self)
     }
@@ -310,7 +310,8 @@ impl<const N: usize> SessionManager<N> {
     ) -> Result<SessionDigest<T>, SessionError>
     where
         T: DigestAlgorithm + IntoHashAlgo,
-        HaceController<MultiContextProvider>: DigestInit<T, Context = OwnedDigestContext<T, MultiContextProvider>>,
+        HaceController<MultiContextProvider>:
+            DigestInit<T, Context = OwnedDigestContext<T, MultiContextProvider>>,
     {
         // Find free slot
         let slot = self
@@ -374,7 +375,8 @@ impl<const N: usize> SessionManager<N> {
     ) -> Result<(T::Digest, SessionHandle<T>), SessionError>
     where
         T: DigestAlgorithm + IntoHashAlgo,
-        OwnedDigestContext<T, MultiContextProvider>: DigestOp<Output = T::Digest, Controller = HaceController<MultiContextProvider>>,
+        OwnedDigestContext<T, MultiContextProvider>:
+            DigestOp<Output = T::Digest, Controller = HaceController<MultiContextProvider>>,
     {
         // Validate session
         let slot_data = self
@@ -394,8 +396,8 @@ impl<const N: usize> SessionManager<N> {
             .set_active_session(digest.provider_session_id);
 
         // Finalize digest using DigestOp trait
-        let (output, mut controller) = DigestOp::finalize(context)
-            .map_err(|_| SessionError::FinalizationFailed)?;
+        let (output, mut controller) =
+            DigestOp::finalize(context).map_err(|_| SessionError::FinalizationFailed)?;
 
         // Release provider session
         controller
@@ -481,11 +483,9 @@ impl<const N: usize> SessionManager<N> {
     /// Check if a session is valid
     #[must_use]
     pub fn is_valid<T>(&self, handle: &SessionHandle<T>) -> bool {
-        self.sessions
-            .get(handle.slot)
-            .map_or(false, |s| {
-                s.session_id == handle.id && s.state == SlotState::Active
-            })
+        self.sessions.get(handle.slot).map_or(false, |s| {
+            s.session_id == handle.id && s.state == SlotState::Active
+        })
     }
 
     /// Get the maximum number of sessions supported

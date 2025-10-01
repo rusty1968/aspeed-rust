@@ -14,7 +14,7 @@
 //! and can be stored in structs, moved across functions, and persist across IPC.
 //!
 
-use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
+use super::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
 use core::convert::Infallible;
 use core::marker::PhantomData;
 use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
@@ -114,7 +114,7 @@ impl<T: DigestAlgorithm + IntoHashAlgo, P: crate::digest::traits::HaceContextPro
     ///
     /// ```no_run
     /// # use aspeed_ddk::digest::hash_owned::OwnedDigestContext;
-    /// # fn example<T, P>(context: OwnedDigestContext<T, P>) -> aspeed_ddk::hace_controller::HaceController<P>
+    /// # fn example<T, P>(context: OwnedDigestContext<T, P>) -> aspeed_ddk::digest::hace_controller::HaceController<P>
     /// # where
     /// #     T: aspeed_ddk::digest::hash_owned::IntoHashAlgo + openprot_hal_blocking::digest::DigestAlgorithm,
     /// #     P: aspeed_ddk::digest::traits::HaceContextProvider,
@@ -289,8 +289,8 @@ impl_owned_digest!(Sha2_512);
 
 #[cfg(test)]
 mod tests {
+    use super::super::hace_controller::HaceController;
     use super::*;
-    use crate::hace_controller::HaceController;
     use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 
     #[test]

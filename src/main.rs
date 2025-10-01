@@ -10,8 +10,8 @@ use aspeed_ddk::watchdog::WdtController;
 use ast1060_pac::Peripherals;
 use ast1060_pac::{Wdt, Wdt1};
 
+use aspeed_ddk::digest::hace_controller::HaceController;
 use aspeed_ddk::ecdsa::AspeedEcdsa;
-use aspeed_ddk::hace_controller::HaceController;
 use aspeed_ddk::rsa::AspeedRsa;
 use aspeed_ddk::spi;
 use aspeed_ddk::syscon::{ClockId, ResetId, SysCon};

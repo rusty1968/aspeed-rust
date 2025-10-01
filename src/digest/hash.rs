@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
+use super::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
 use proposed_traits::digest::{DigestAlgorithm, DigestInit, DigestOp, Error, ErrorKind, ErrorType};
 
 // DigestAlgorithm implementation for HashAlgo
@@ -145,7 +145,11 @@ where
     }
 }
 
-pub struct OpContextImpl<'a, A: DigestAlgorithm + IntoHashAlgo, P: crate::digest::traits::HaceContextProvider> {
+pub struct OpContextImpl<
+    'a,
+    A: DigestAlgorithm + IntoHashAlgo,
+    P: crate::digest::traits::HaceContextProvider,
+> {
     pub controller: &'a mut HaceController<P>,
     _phantom: core::marker::PhantomData<A>,
 }

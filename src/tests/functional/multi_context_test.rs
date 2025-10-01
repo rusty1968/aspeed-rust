@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license
 
+use crate::digest::hace_controller::HaceController;
 use crate::digest::multi_context::MultiContextProvider;
 use crate::digest::session::SessionManager;
 use crate::digest::traits::HaceContextProvider;
-use crate::hace_controller::HaceController;
 use crate::uart::UartController;
 use embedded_io::Write;
 

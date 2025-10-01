@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::hace_controller::AspeedHashContext;
+use super::hace_controller::AspeedHashContext;
 
 /// Error type for context provider operations
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -31,7 +31,7 @@ pub struct SingleContextProvider;
 impl HaceContextProvider for SingleContextProvider {
     fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, ContextError> {
         // SAFETY: Single-threaded execution, no HACE interrupts enabled
-        Ok(unsafe { &mut *crate::hace_controller::shared_hash_ctx() })
+        Ok(unsafe { &mut *super::hace_controller::shared_hash_ctx() })
     }
 }
 
