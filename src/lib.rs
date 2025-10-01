@@ -6,7 +6,6 @@ pub mod common;
 pub mod digest;
 pub mod ecdsa;
 pub mod gpio;
-pub mod hace_controller;
 pub mod i2c;
 pub mod pinctrl;
 pub mod rsa;

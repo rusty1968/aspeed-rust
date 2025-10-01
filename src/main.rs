@@ -10,8 +10,8 @@ use aspeed_ddk::watchdog::WdtController;
 use ast1060_pac::Peripherals;
 use ast1060_pac::{Wdt, Wdt1};
 
+use aspeed_ddk::digest::hace_controller::HaceController;
 use aspeed_ddk::ecdsa::AspeedEcdsa;
-use aspeed_ddk::hace_controller::HaceController;
 use aspeed_ddk::rsa::AspeedRsa;
 use aspeed_ddk::spi;
 use aspeed_ddk::syscon::{ClockId, ResetId, SysCon};
@@ -22,6 +22,7 @@ use aspeed_ddk::tests::functional::gpio_test;
 use aspeed_ddk::tests::functional::hash_test::run_hash_tests;
 use aspeed_ddk::tests::functional::hmac_test::run_hmac_tests;
 use aspeed_ddk::tests::functional::i2c_test;
+#[cfg(feature = "multi-context")]
 use aspeed_ddk::tests::functional::multi_context_test::run_multi_context_tests;
 use aspeed_ddk::tests::functional::rsa_test::run_rsa_tests;
 use aspeed_ddk::tests::functional::timer_test::run_timer_tests;
@@ -350,8 +351,9 @@ fn main() -> ! {
     // Test the owned digest API
     test_owned_digest_api(&mut uart_controller);
 
-    // Test the multi-context provider
-    run_multi_context_tests(&mut uart_controller);
+    // Test the multi-context provider (if feature enabled)
+    #[cfg(feature = "multi-context")]
+    run_multi_context_tests(&mut uart_controller, hace_controller);
 
     // Enable RSA and ECC
     let _ = syscon.enable_clock(ClockId::ClkRSACLK as u8);

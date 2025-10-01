@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+use crate::digest::hace_controller::HaceController;
 use crate::digest::hmac::{IntoHashAlgo, Sha256, Sha384, Sha512};
-use crate::hace_controller::HaceController;
 use crate::uart::UartController;
 use core::any::TypeId;
 use embedded_io::Write;

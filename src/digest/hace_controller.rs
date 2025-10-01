@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+#[allow(unused_imports)] // Used in trait bounds
 use crate::digest::traits::HaceContextProvider;
 use ast1060_pac::Hace;
 use core::convert::{AsRef, Infallible};
@@ -135,7 +136,7 @@ pub trait ContextCleanup {
     fn cleanup_context(&mut self);
 }
 
-impl ContextCleanup for crate::hace_controller::HaceController {
+impl<P: crate::digest::traits::HaceContextProvider> ContextCleanup for HaceController<P> {
     fn cleanup_context(&mut self) {
         let ctx = self.ctx_mut_unchecked();
         ctx.bufcnt = 0;
@@ -318,53 +319,77 @@ impl HashAlgo {
     }
 }
 
-pub struct HaceController {
+pub struct HaceController<
+    P: crate::digest::traits::HaceContextProvider = crate::digest::traits::SingleContextProvider,
+> {
     pub hace: Hace,
     pub algo: HashAlgo,
+    pub provider: P,
 }
 
-impl HaceController {
+/// Get a mutable pointer to the shared hash context in `.ram_nc` section
+///
+/// This is a module-level function that provides access to the global shared context
+/// used by single-context providers and as temporary storage for multi-context providers.
+pub fn shared_hash_ctx() -> *mut AspeedHashContext {
+    SHARED_HASH_CTX.get()
+}
+
+impl HaceController<crate::digest::traits::SingleContextProvider> {
+    /// Create a new HACE controller with single-context provider (default)
     #[must_use]
     pub fn new(hace: Hace) -> Self {
         Self {
             hace,
             algo: HashAlgo::SHA256,
+            provider: crate::digest::traits::SingleContextProvider,
+        }
+    }
+}
+
+impl<P: crate::digest::traits::HaceContextProvider> HaceController<P> {
+    /// Create a new HACE controller with a custom provider
+    #[must_use]
+    pub fn with_provider(hace: Hace, provider: P) -> Self {
+        Self {
+            hace,
+            algo: HashAlgo::SHA256,
+            provider,
         }
     }
 
-    /// Get a mutable reference to the shared context in `.ram_nc` section
-    /// This approach uses the section-placed context directly
-    pub fn shared_ctx() -> *mut AspeedHashContext {
-        SHARED_HASH_CTX.get()
+    /// Get mutable reference to the provider
+    pub fn provider_mut(&mut self) -> &mut P {
+        &mut self.provider
     }
 }
 
-impl DigestErrorType for HaceController {
+impl<P: crate::digest::traits::HaceContextProvider> DigestErrorType for HaceController<P> {
     type Error = Infallible;
 }
 
-impl MacErrorType for HaceController {
+impl<P: crate::digest::traits::HaceContextProvider> MacErrorType for HaceController<P> {
     type Error = Infallible;
 }
 
-impl HaceContextProvider for HaceController {
+impl<P: crate::digest::traits::HaceContextProvider> crate::digest::traits::HaceContextProvider
+    for HaceController<P>
+{
     fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, crate::digest::traits::ContextError> {
-        // SAFETY: Single-threaded execution, no HACE interrupts enabled,
-        // &mut self ensures exclusive access to HaceController
-        // This never fails for single-context provider
-        Ok(unsafe { &mut *Self::shared_ctx() })
+        // Delegate to the provider
+        self.provider.ctx_mut()
     }
 }
 
-impl HaceController {
-    /// Internal helper for infallible context access.
-    /// Only use this within `HaceController` methods where we know it cannot fail.
+impl<P: crate::digest::traits::HaceContextProvider> HaceController<P> {
+    /// Internal helper for context access.
+    /// For single-context provider, errors should never occur.
+    /// For multi-context provider, errors are ignored (see TODO in `multi_context.rs`).
     #[inline]
     pub(crate) fn ctx_mut_unchecked(&mut self) -> &mut AspeedHashContext {
-        // SAFETY: HaceController always uses shared context which never fails
-        match self.ctx_mut() {
+        match self.provider.ctx_mut() {
             Ok(ctx) => ctx,
-            Err(_) => unreachable!("HaceController::ctx_mut() never fails"),
+            Err(_) => unreachable!("ctx_mut() failed unexpectedly"),
         }
     }
 

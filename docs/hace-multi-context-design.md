@@ -1,8 +1,10 @@
 # HACE Multi-Context Design Document
 
+**Status**: ✅ **IMPLEMENTED** (As of 2025-09-30)
+
 ## Overview
 
-This document describes the design for adding multi-context support to the ASPEED HACE (Hash and Crypto Engine) controller, enabling concurrent hash operations required by security protocols in the Hubris digest server.
+This document describes the implemented multi-context support for the ASPEED HACE (Hash and Crypto Engine) controller, enabling concurrent hash operations required by security protocols.
 
 ## Problem Statement
 
@@ -38,11 +40,11 @@ The Hubris digest server using [hash_owned.rs](../src/hash_owned.rs) attempts to
 4. **Performance**: Minimize context switch overhead
 5. **Safety**: Maintain memory safety and prevent context corruption
 
-## Proposed Solution
+## Implemented Solution
 
 ### Architecture Overview
 
-Use Rust's trait system to make `HaceController` generic over context storage strategies, with zero code duplication:
+Uses Rust's trait system to make `HaceController` generic over context storage strategies with dependency injection:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -63,90 +65,154 @@ Use Rust's trait system to make `HaceController` generic over context storage st
 
 #### 1. Context Provider Trait
 
+**Location**: [src/digest/traits.rs](../src/digest/traits.rs)
+
 ```rust
 /// Trait abstracting how hash context is accessed
 pub trait HaceContextProvider {
     /// Get mutable reference to the active hash context
-    fn ctx_mut(&mut self) -> &mut AspeedHashContext;
+    ///
+    /// # Errors
+    /// Returns `ContextError` if context access fails (multi-context only)
+    fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, ContextError>;
 }
 ```
 
-#### 2. Single Context Provider (Current Behavior)
+**Note**: The trait returns `Result` to support multi-context error handling. Single-context provider never fails (returns `Ok` always).
+
+#### 2. Single Context Provider (Default, Zero-Cost)
+
+**Location**: [src/digest/traits.rs](../src/digest/traits.rs)
 
 ```rust
-/// Uses the shared hardware context directly (current behavior)
-pub struct SharedContextProvider;
+/// Single-context provider that uses the global shared context (zero overhead)
+///
+/// This is the default provider for `HaceController` and provides the same
+/// behavior as the original non-generic implementation.
+pub struct SingleContextProvider;
 
-impl HaceContextProvider for SharedContextProvider {
-    fn ctx_mut(&mut self) -> &mut AspeedHashContext {
-        unsafe { &mut *SHARED_HASH_CTX.get() }
+impl HaceContextProvider for SingleContextProvider {
+    fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, ContextError> {
+        // SAFETY: Single-threaded execution, no HACE interrupts enabled
+        Ok(unsafe { &mut *shared_hash_ctx() })
     }
 }
 ```
 
-#### 3. Multi-Context Provider (New)
+**Key Features**:
+- Zero-sized type (no runtime overhead)
+- Always succeeds (never returns `Err`)
+- Direct access to global `SHARED_HASH_CTX`
+- Default provider when `HaceController` is used without type parameter
+
+#### 3. Multi-Context Provider (Session Management)
+
+**Location**: [src/digest/multi_context.rs](../src/digest/multi_context.rs)
 
 ```rust
-/// Manages multiple context states with automatic switching
+/// Manages multiple hash contexts with automatic switching
 pub struct MultiContextProvider {
-    /// Stored context states (one per session)
-    contexts: [AspeedHashContext; MAX_SESSIONS],
+    /// Stored context states (one per session) - uses MaybeUninit for lazy initialization
+    contexts: [MaybeUninit<AspeedHashContext>; MAX_SESSIONS],
+    /// Session allocation bitmap (1 = allocated, 0 = free)
+    allocated: [bool; MAX_SESSIONS],
     /// Currently active session ID
     active_id: usize,
-    /// Which context is currently loaded in hardware
+    /// Which context is currently loaded in hardware (None = hardware not initialized)
     last_loaded: Option<usize>,
+    /// Maximum number of sessions to support (configurable, <= MAX_SESSIONS)
+    max_sessions: usize,
 }
 
 impl HaceContextProvider for MultiContextProvider {
-    fn ctx_mut(&mut self) -> &mut AspeedHashContext {
-        // Perform context switch if needed
+    fn ctx_mut(&mut self) -> Result<&mut AspeedHashContext, ContextError> {
+        // Perform lazy context switch if needed
         if self.last_loaded != Some(self.active_id) {
             if let Some(prev_id) = self.last_loaded {
-                self.save_hw_to_slot(prev_id);
+                // Save hardware context to previous session's storage slot
+                // Note: Errors ignored per project requirements (should never fail with valid session IDs)
+                let _ = self.save_hw_to_slot(prev_id);
             }
-            self.load_slot_to_hw(self.active_id);
+            // Load active session's context to hardware
+            let _ = self.load_slot_to_hw(self.active_id);
             self.last_loaded = Some(self.active_id);
         }
 
-        // Return hardware context
-        unsafe { &mut *SHARED_HASH_CTX.get() }
+        // Return mutable reference to the shared hardware context
+        Ok(unsafe { &mut *shared_hash_ctx() })
     }
 }
 ```
 
-#### 4. Generic HaceController
+**Key Features**:
+- Supports up to 4 concurrent sessions (`MAX_SESSIONS = 4`)
+- Lazy context switching (only switches when necessary)
+- Session allocation/deallocation API
+- Uses `.get()` instead of direct indexing (panic-free per CLAUDE.md)
+- Secure zeroing on session release (volatile writes to prevent optimization)
+- ~732 bytes copied per context switch
+
+#### 4. Generic HaceController (Dependency Injection)
+
+**Location**: [src/hace_controller.rs](../src/hace_controller.rs)
 
 ```rust
 /// Hash controller generic over context storage strategy
-pub struct HaceController<P: HaceContextProvider = SharedContextProvider> {
+///
+/// Uses dependency injection - the controller depends on a provider,
+/// not the other way around. This is the correct architecture.
+pub struct HaceController<P: HaceContextProvider = SingleContextProvider> {
     pub hace: Hace,
     pub algo: HashAlgo,
-    provider: P,
+    pub provider: P,  // Provider is injected, not owned by provider
 }
 
+// Constructor for single-context (default)
+impl HaceController<SingleContextProvider> {
+    pub fn new(hace: Hace) -> Self {
+        Self {
+            hace,
+            algo: HashAlgo::SHA256,
+            provider: SingleContextProvider,
+        }
+    }
+}
+
+// Constructor with custom provider
 impl<P: HaceContextProvider> HaceController<P> {
-    /// Access hash context (delegates to provider)
-    pub fn ctx_mut(&mut self) -> &mut AspeedHashContext {
-        self.provider.ctx_mut()
+    pub fn with_provider(hace: Hace, provider: P) -> Self {
+        Self {
+            hace,
+            algo: HashAlgo::SHA256,
+            provider,
+        }
+    }
+
+    pub fn provider_mut(&mut self) -> &mut P {
+        &mut self.provider
+    }
+}
+
+// All hash operations delegate to provider for context access
+impl<P: HaceContextProvider> HaceController<P> {
+    fn ctx_mut_unchecked(&mut self) -> &mut AspeedHashContext {
+        match self.provider.ctx_mut() {
+            Ok(ctx) => ctx,
+            Err(_) => unreachable!("ctx_mut() failed unexpectedly"),
+        }
     }
 
     // All other methods remain UNCHANGED:
-    pub fn start_hash_operation(&mut self, len: u32) { /* same */ }
-    pub fn copy_iv_to_digest(&mut self) { /* same */ }
-    pub fn hash_key(&mut self, key: &impl AsRef<[u8]>) { /* same */ }
-    pub fn fill_padding(&mut self, remaining: usize) { /* same */ }
+    pub fn start_hash_operation(&mut self, len: u32) { /* delegates to provider */ }
+    pub fn copy_iv_to_digest(&mut self) { /* delegates to provider */ }
+    pub fn hash_key(&mut self, key: &impl AsRef<[u8]>) { /* delegates to provider */ }
+    pub fn fill_padding(&mut self, remaining: usize) { /* delegates to provider */ }
 }
 ```
 
-#### 5. Type Aliases for Convenience
-
-```rust
-/// Single-context controller (current default behavior)
-pub type SingleHaceController = HaceController<SharedContextProvider>;
-
-/// Multi-context controller with session management
-pub type MultiHaceController = HaceController<MultiContextProvider>;
-```
+**Key Design Principle**:
+- ✅ Controller **uses** provider (dependency injection)
+- ❌ NOT: Provider owns controller (that would be backwards!)
 
 ## Context State Management
 
@@ -580,9 +646,49 @@ pub struct AspeedHashContext {
 // Total: ~732 bytes (with alignment/padding)
 ```
 
+## Implementation Status
+
+### ✅ Completed
+
+1. **Core Architecture**
+   - [x] `HaceContextProvider` trait in [src/digest/traits.rs](../src/digest/traits.rs)
+   - [x] `SingleContextProvider` (zero-cost default)
+   - [x] Generic `HaceController<P>` with default parameter
+   - [x] Module-level `shared_hash_ctx()` function
+
+2. **Multi-Context Provider**
+   - [x] `MultiContextProvider` struct in [src/digest/multi_context.rs](../src/digest/multi_context.rs)
+   - [x] Session allocation/deallocation API
+   - [x] Lazy context switching logic
+   - [x] Save/restore operations (732 bytes per switch)
+   - [x] Secure zeroing on release (volatile writes)
+   - [x] Panic-free implementation (uses `.get()` instead of indexing)
+   - [x] Debug assertions for session validation
+
+3. **Integration**
+   - [x] Hash module refactored into `src/digest/` directory
+   - [x] Functional tests for multi-context provider
+   - [x] Backward compatibility (existing code works unchanged)
+
+### 🚧 Remaining Work
+
+1. **hash_owned.rs Integration**
+   - [ ] Make `OwnedDigestContext` generic over provider (currently uses default)
+   - [ ] Add example usage with `MultiContextProvider`
+
+2. **Testing**
+   - [ ] Run functional tests on hardware/QEMU
+   - [ ] Performance benchmarks for context switching
+   - [ ] Stress testing with all 4 sessions active
+
+3. **Documentation**
+   - [ ] Add usage examples to module docs
+   - [ ] Document performance characteristics
+   - [ ] Add troubleshooting guide
+
 ---
 
-**Document Version**: 1.0
+**Document Version**: 2.0 (Updated)
 **Author**: Claude Code
-**Date**: 2025-09-30
-**Status**: Proposed
+**Date**: 2025-09-30 (Initial), 2025-09-30 (Implementation Update)
+**Status**: ✅ Architecture implemented, integration pending

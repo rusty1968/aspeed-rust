@@ -14,7 +14,7 @@
 //! and can be stored in structs, moved across functions, and persist across IPC.
 //!
 
-use crate::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
+use super::hace_controller::{ContextCleanup, HaceController, HashAlgo, HACE_SG_LAST};
 use core::convert::Infallible;
 use core::marker::PhantomData;
 use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
@@ -55,25 +55,90 @@ impl IntoHashAlgo for Sha2_512 {
 /// and provides exclusive access to the HACE hardware during digest operations.
 /// It has no lifetime constraints and can be stored in structs, moved across functions,
 /// and persist across IPC boundaries.
-pub struct OwnedDigestContext<T: DigestAlgorithm + IntoHashAlgo> {
-    controller: HaceController,
+///
+/// Generic over both the digest algorithm `T` and the context provider `P`.
+/// - `P = SingleContextProvider` (default): Single hash operation at a time
+/// - `P = MultiContextProvider`: Multiple concurrent hash sessions
+pub struct OwnedDigestContext<
+    T: DigestAlgorithm + IntoHashAlgo,
+    P: crate::digest::traits::HaceContextProvider = crate::digest::traits::SingleContextProvider,
+> {
+    controller: HaceController<P>,
     _phantom: PhantomData<T>,
 }
 
 // Implement ErrorType for HaceController (required by OpenProt DigestInit)
-impl ErrorType for HaceController {
+impl<P: crate::digest::traits::HaceContextProvider> ErrorType for HaceController<P> {
     type Error = Infallible;
 }
 
-impl<T: DigestAlgorithm + IntoHashAlgo> ErrorType for OwnedDigestContext<T> {
+impl<T: DigestAlgorithm + IntoHashAlgo, P: crate::digest::traits::HaceContextProvider> ErrorType
+    for OwnedDigestContext<T, P>
+{
     type Error = Infallible;
+}
+
+impl<T: DigestAlgorithm + IntoHashAlgo, P: crate::digest::traits::HaceContextProvider>
+    OwnedDigestContext<T, P>
+{
+    /// Get mutable reference to the underlying controller
+    ///
+    /// This is needed for session management in multi-context scenarios,
+    /// allowing access to the provider for session activation.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use aspeed_ddk::digest::hash_owned::OwnedDigestContext;
+    /// # fn example<T, P>(mut context: OwnedDigestContext<T, P>)
+    /// # where
+    /// #     T: aspeed_ddk::digest::hash_owned::IntoHashAlgo + openprot_hal_blocking::digest::DigestAlgorithm,
+    /// #     P: aspeed_ddk::digest::traits::HaceContextProvider,
+    /// # {
+    /// // Access provider for session management
+    /// let provider = context.controller_mut().provider_mut();
+    /// provider.set_active_session(0);
+    /// # }
+    /// ```
+    pub fn controller_mut(&mut self) -> &mut HaceController<P> {
+        &mut self.controller
+    }
+
+    /// Cancel the context and recover the controller
+    ///
+    /// This method consumes the context, performs cleanup, and returns
+    /// the underlying controller for reuse. This is useful for error
+    /// handling or when aborting a digest operation.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use aspeed_ddk::digest::hash_owned::OwnedDigestContext;
+    /// # fn example<T, P>(context: OwnedDigestContext<T, P>) -> aspeed_ddk::digest::hace_controller::HaceController<P>
+    /// # where
+    /// #     T: aspeed_ddk::digest::hash_owned::IntoHashAlgo + openprot_hal_blocking::digest::DigestAlgorithm,
+    /// #     P: aspeed_ddk::digest::traits::HaceContextProvider,
+    /// # {
+    /// // Cancel and recover controller
+    /// let controller = context.cancel();
+    /// // Controller can now be reused
+    /// controller
+    /// # }
+    /// ```
+    pub fn cancel(mut self) -> HaceController<P> {
+        // Cleanup the context before returning controller
+        self.controller.cleanup_context();
+        self.controller
+    }
 }
 
 /// Macro to implement owned digest traits for each algorithm
 macro_rules! impl_owned_digest {
     ($algo:ident) => {
-        impl DigestInit<$algo> for HaceController {
-            type Context = OwnedDigestContext<$algo>;
+        impl<P: crate::digest::traits::HaceContextProvider> DigestInit<$algo>
+            for HaceController<P>
+        {
+            type Context = OwnedDigestContext<$algo, P>;
             type Output = <$algo as DigestAlgorithm>::Digest;
 
             fn init(mut self, _init_params: $algo) -> Result<Self::Context, Self::Error> {
@@ -93,9 +158,11 @@ macro_rules! impl_owned_digest {
             }
         }
 
-        impl DigestOp for OwnedDigestContext<$algo> {
+        impl<P: crate::digest::traits::HaceContextProvider> DigestOp
+            for OwnedDigestContext<$algo, P>
+        {
             type Output = <$algo as DigestAlgorithm>::Digest;
-            type Controller = HaceController;
+            type Controller = HaceController<P>;
 
             fn update(mut self, data: &[u8]) -> Result<Self, Self::Error> {
                 let input_len = u32::try_from(data.len()).unwrap_or(u32::MAX);
@@ -222,8 +289,8 @@ impl_owned_digest!(Sha2_512);
 
 #[cfg(test)]
 mod tests {
+    use super::super::hace_controller::HaceController;
     use super::*;
-    use crate::hace_controller::HaceController;
     use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 
     #[test]
