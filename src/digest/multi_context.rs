@@ -91,12 +91,20 @@ impl MultiContextProvider {
     /// # Errors
     /// Returns `Err(SessionError)` if all session slots are allocated
     pub fn allocate_session(&mut self) -> Result<usize, SessionError> {
-        for (id, allocated) in self.allocated[..self.max_sessions].iter_mut().enumerate() {
+        for (id, allocated) in self
+            .allocated
+            .get_mut(..self.max_sessions)
+            .ok_or(SessionError)?
+            .iter_mut()
+            .enumerate()
+        {
             if !*allocated {
                 *allocated = true;
                 // Initialize the context with default values
-                self.contexts[id] = MaybeUninit::new(AspeedHashContext::default());
-                return Ok(id);
+                if let Some(ctx) = self.contexts.get_mut(id) {
+                    *ctx = MaybeUninit::new(AspeedHashContext::default());
+                    return Ok(id);
+                }
             }
         }
         Err(SessionError)
@@ -110,13 +118,26 @@ impl MultiContextProvider {
     /// # Safety
     /// After releasing, the session ID must not be used again until reallocated.
     pub fn release_session(&mut self, session_id: usize) {
-        if session_id < self.max_sessions && self.allocated[session_id] {
-            self.allocated[session_id] = false;
-            // Zero out the context for security
-            self.contexts[session_id] = MaybeUninit::new(AspeedHashContext::default());
-            // If this was the loaded context, invalidate the cache
-            if self.last_loaded == Some(session_id) {
-                self.last_loaded = None;
+        if let Some(allocated) = self.allocated.get_mut(session_id) {
+            if session_id < self.max_sessions && *allocated {
+                *allocated = false;
+
+                // Zero out the context for security using volatile writes to prevent optimization
+                if let Some(ctx) = self.contexts.get_mut(session_id) {
+                    // SAFETY: We're writing to allocated memory within bounds
+                    unsafe {
+                        let ctx_ptr = ctx.as_mut_ptr().cast::<u8>();
+                        let size = core::mem::size_of::<AspeedHashContext>();
+                        for i in 0..size {
+                            core::ptr::write_volatile(ctx_ptr.add(i), 0);
+                        }
+                    }
+                }
+
+                // If this was the loaded context, invalidate the cache
+                if self.last_loaded == Some(session_id) {
+                    self.last_loaded = None;
+                }
             }
         }
     }
@@ -127,11 +148,11 @@ impl MultiContextProvider {
     /// * `session_id` - Session ID returned by `allocate_session()`
     ///
     /// # Panics
-    /// Panics if `session_id` is not allocated or out of bounds
+    /// Panics in debug builds if `session_id` is not allocated or out of bounds
     pub fn set_active_session(&mut self, session_id: usize) {
-        assert!(session_id < self.max_sessions, "Session ID out of bounds");
-        assert!(
-            self.allocated[session_id],
+        debug_assert!(session_id < self.max_sessions, "Session ID out of bounds");
+        debug_assert!(
+            self.allocated.get(session_id).copied().unwrap_or(false),
             "Session ID not allocated: {session_id}"
         );
         self.active_id = session_id;
@@ -146,7 +167,7 @@ impl MultiContextProvider {
     /// Check if a session is allocated
     #[must_use]
     pub fn is_session_allocated(&self, session_id: usize) -> bool {
-        session_id < self.max_sessions && self.allocated[session_id]
+        session_id < self.max_sessions && self.allocated.get(session_id).copied().unwrap_or(false)
     }
 
     /// Save hardware context to a storage slot
@@ -165,13 +186,18 @@ impl MultiContextProvider {
         if slot_id >= self.max_sessions {
             return Err(ContextError::SessionOutOfBounds);
         }
-        if !self.allocated[slot_id] {
+        if !self.allocated.get(slot_id).copied().unwrap_or(false) {
             return Err(ContextError::SessionNotAllocated);
         }
 
         // SAFETY: We've verified slot_id is in bounds and allocated,
         // so the MaybeUninit is initialized
-        let saved = unsafe { self.contexts[slot_id].assume_init_mut() };
+        let saved = unsafe {
+            self.contexts
+                .get_mut(slot_id)
+                .ok_or(ContextError::SessionOutOfBounds)?
+                .assume_init_mut()
+        };
 
         // SAFETY: Single-threaded execution, no HACE interrupts enabled,
         // &mut self ensures exclusive access
@@ -214,13 +240,18 @@ impl MultiContextProvider {
         if slot_id >= self.max_sessions {
             return Err(ContextError::SessionOutOfBounds);
         }
-        if !self.allocated[slot_id] {
+        if !self.allocated.get(slot_id).copied().unwrap_or(false) {
             return Err(ContextError::SessionNotAllocated);
         }
 
         // SAFETY: We've verified slot_id is in bounds and allocated,
         // so the MaybeUninit is initialized
-        let saved = unsafe { self.contexts[slot_id].assume_init_ref() };
+        let saved = unsafe {
+            self.contexts
+                .get(slot_id)
+                .ok_or(ContextError::SessionOutOfBounds)?
+                .assume_init_ref()
+        };
 
         // SAFETY: Single-threaded execution, no HACE interrupts enabled,
         // &mut self ensures exclusive access
