@@ -45,3 +45,28 @@ cortex-m = { version = "0.7.5" }
 cortex-m-rt = { version = "0.6.5", features = ["device"] }
 panic-halt = "1.0.0"
 
+# Profile for GDB debugging - disables optimizations for better debugging experience
+[profile.dev]
+opt-level = 0           # No optimizations
+debug = true            # Full debug info
+debug-assertions = true # Enable debug assertions
+overflow-checks = true  # Enable overflow checks
+lto = false            # No link-time optimization
+codegen-units = 16     # Faster compilation
+
+# Profile for hardware testing with GDB - minimal optimizations, full debug info
+[profile.gdb-test]
+inherits = "dev"
+opt-level = 1          # Minimal optimizations (helps with some embedded issues)
+debug = 2              # Full debug info with all details
+strip = false          # Don't strip symbols
+
+# Standard release profile
+[profile.release]
+opt-level = "z"        # Optimize for size
+debug = false          # No debug info
+lto = true             # Enable link-time optimization
+codegen-units = 1      # Better optimization
+strip = true           # Strip symbols
+panic = "abort"        # Abort on panic for smaller binary
+
