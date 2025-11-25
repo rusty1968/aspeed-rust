@@ -323,10 +323,12 @@ impl<I2C: Instance, I2CT: I2CTarget, L: Logger> HardwareInterface for Ast1060I2c
             .is_ok()
         {
             i2c_debug!(self.logger, "i2c global init");
+            // Assert I2C reset
             scu.scu050().write(|w| w.rst_i2csmbus_ctrl().set_bit());
             let mut delay = DummyDelay {};
             delay.delay_ns(1_000_000); // 1ms delay
-            scu.scu054().write(|w| unsafe { w.bits(0x4) });
+            // Deassert I2C reset
+            scu.scu050().write(|w| w.rst_i2csmbus_ctrl().clear_bit());
             delay.delay_ns(1_000_000); // 1ms delay
 
             let i2cg = unsafe { &*I2cglobal::ptr() };
